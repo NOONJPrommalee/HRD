@@ -1,0 +1,2100 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบบริหารงานทรัพยากรบุคคล (HRD)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Corporate Calm -->
+    <!-- Application Structure Plan: ออกแบบเป็น Single-Page Application (SPA) ที่มี Sidebar Navigation ด้านซ้ายคงที่ และส่วนแสดงผลหลักที่เปลี่ยนแปลงตามเมนูที่เลือก โครงสร้างนี้เหมาะสำหรับแอปพลิเคชัน Dashboard เพราะช่วยให้ผู้ใช้เข้าถึงส่วนต่างๆ ได้อย่างรวดเร็วโดยไม่ต้องโหลดหน้าใหม่ทั้งหมด การแสดง/ซ่อนเมนูตามบทบาทผู้ใช้ (Role) ทำให้ UI ไม่ซับซ้อนและนำเสนอเฉพาะฟังก์ชันที่จำเป็นสำหรับแต่ละคน User flow จะเริ่มต้นที่หน้า Dashboard เพื่อให้เห็นภาพรวม จากนั้นผู้ใช้สามารถเลือกทำงานตามเมนู เช่น สร้างแผน, อนุมัติ, หรือดูข้อมูลอื่นๆ ได้อย่างต่อเนื่อง -->
+    <!-- Visualization & Content Choices: Dashboard แสดงผลข้อมูลหลักด้วยการ์ด (KPIs) เพื่อการรับรู้ที่รวดเร็ว และใช้ Chart.js สร้างแผนภูมิ 3 ประเภท: 1. Donut Chart (สถานะแผน) เพื่อแสดงสัดส่วน 2. Bar Chart (จำนวนการฝึกอบรม) เพื่อเปรียบเทียบข้อมูลระหว่างแผนก 3. Line Chart (การใช้งบประมาณ) เพื่อติดตามแนวโน้มตามเวลา ส่วนอื่นๆ ใช้ตาราง (HTML) สำหรับแสดงรายการข้อมูลซึ่งสามารถโต้ตอบได้ เช่น การกรองหรือเรียงลำดับ และใช้ Modal (Dialog) สำหรับการสร้าง/แก้ไขข้อมูลเพื่อรักษา Context ของผู้ใช้ไว้ โดยทั้งหมดนี้ไม่ใช้ SVG หรือ Mermaid JS -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Kanit', sans-serif; background-color: #f8f9fa; }
+        .sidebar { transition: transform 0.3s ease-in-out; }
+        .main-content { transition: margin-left 0.3s ease-in-out; }
+        .kanit { font-family: 'Kanit', sans-serif; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 4px;}
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        .chart-container { position: relative; width: 100%; height: 350px; max-height: 400px; margin-left: auto; margin-right: auto; }
+        /* Style for custom radio buttons */
+        .radio-container { display: flex; align-items: center; }
+        .radio-container input { display: none; }
+        .radio-container label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            padding: 8px 16px;
+            border-radius: 9999px;
+            border: 1px solid #D1D5DB;
+            transition: all 0.2s;
+            background-color: #F3F4F6;
+        }
+        .radio-container input:checked + label {
+            background-color: #6366F1;
+            color: #fff;
+            border-color: #6366F1;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        /* Style for the two-column input and table */
+        .input-group, .table-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr 1fr 1fr 40px;
+            gap: 16px;
+            align-items: center;
+        }
+        .table-row > div:last-child, .input-group > div:last-child {
+             grid-column: span 1;
+        }
+        .table-row .col-span-2 { grid-column: span 2; }
+        .table-row .col-span-3 { grid-column: span 3; }
+        .clickable-cell {
+            color: #4338CA;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        .clickable-cell:hover {
+            text-decoration: underline;
+        }
+        .submenu-toggle { transition: transform 0.2s ease-in-out; }
+        .submenu { display: none; }
+        .submenu.active { display: block; }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <div class="flex h-screen bg-gray-100">
+        <!-- Sidebar -->
+        <div id="sidebar" class="fixed inset-y-0 left-0 bg-white w-64 shadow-lg p-4 z-30 transform md:transform-none -translate-x-full md:relative md:translate-x-0 sidebar">
+            <div class="flex items-center justify-between mb-8">
+                <span class="text-2xl font-bold text-indigo-600 kanit">HRD NE2 System</span>
+                <button id="close-sidebar-btn" class="md:hidden text-gray-600 hover:text-gray-800">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <nav id="nav-menu">
+                <!-- Menu items will be populated by JavaScript -->
+            </nav>
+        </div>
+
+        <!-- Main content -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+            <header class="flex justify-between items-center p-4 bg-white shadow-md">
+                 <button id="open-sidebar-btn" class="md:hidden text-gray-600 hover:text-gray-800">
+                    <i class="fas fa-bars text-xl"></i>
+                </button>
+                <h1 id="page-title" class="text-xl font-semibold kanit">ภาพรวม Dashboard</h1>
+                <div class="flex items-center space-x-4">
+                    <div class="relative">
+                        <label for="role-switcher" class="text-sm font-medium mr-2">บทบาท:</label>
+                        <select id="role-switcher" class="p-2 rounded-md border bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <option value="user">ผู้ใช้งานทั่วไป</option>
+                            <option value="approver">ผู้อนุมัติ</option>
+                            <option value="hr">แผนกพัฒนาบุคคล</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                         <img src="https://placehold.co/40x40/E2E8F0/4A5568?text=AV" alt="Avatar" class="w-10 h-10 rounded-full">
+                        <div>
+                            <p id="user-name" class="font-semibold">สมชาย ใจดี</p>
+                            <p id="user-role-text" class="text-sm text-gray-500">ผู้ใช้งานทั่วไป</p>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <main id="main-content" class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-6 main-content">
+                <!-- Content will be populated by JavaScript -->
+            </main>
+        </div>
+    </div>
+    
+    <!-- Modal for Plan Details -->
+    <div id="plan-modal" class="fixed inset-0 bg-black bg-opacity-50 z-40 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold" id="modal-title">รายละเอียดแผน</h2>
+                <button id="close-modal-btn" class="text-gray-600 hover:text-gray-800"><i class="fas fa-times text-xl"></i></button>
+            </div>
+            <div id="modal-content" class="space-y-6">
+                <!-- Basic Info -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 p-4 border rounded-lg bg-gray-50">
+                    <p><strong>ชื่อแผน:</strong> <span id="modal-plan-name"></span></p>
+                    <p><strong>ประเภท:</strong> <span id="modal-plan-type"></span></p>
+                    <p><strong>ผู้สร้าง:</strong> <span id="modal-plan-creator"></span></p>
+                    <p><strong>วันที่ส่ง:</strong> <span id="modal-plan-date"></span></p>
+                    <p class="md:col-span-2"><strong>สถานะ:</strong> <span id="modal-plan-status"></span></p>
+                    <p class="md:col-span-2"><strong>รายละเอียด:</strong> <span id="modal-plan-details"></span></p>
+                </div>
+
+                <!-- Participants & Speakers -->
+                <div id="modal-participants-section" class="hidden">
+                    <h3 class="text-lg font-bold text-indigo-600 mb-2">ผู้เข้าร่วมและวิทยากร</h3>
+                    <div id="modal-plan-participants" class="overflow-x-auto border rounded-lg"></div>
+                </div>
+
+                <!-- Expenses -->
+                <div id="modal-expenses-section" class="hidden">
+                    <h3 class="text-lg font-bold text-indigo-600 mb-2">รายละเอียดค่าใช้จ่าย</h3>
+                    <div id="modal-plan-expenses" class="overflow-x-auto border rounded-lg"></div>
+                </div>
+            </div>
+            <div id="modal-actions" class="mt-6 flex justify-end space-x-4">
+                 <!-- Actions will be populated by JS -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal for Training Need Details -->
+    <div id="training-need-modal" class="fixed inset-0 bg-black bg-opacity-50 z-40 hidden items-center justify-center">
+        <div class="bg-white rounded-lg shadow-xl p-8 max-w-2xl w-full">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold">รายละเอียดคำขอฝึกอบรม</h2>
+                <button id="close-training-need-modal-btn" class="text-gray-600 hover:text-gray-800">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="space-y-4 text-gray-700">
+                <p><strong>ผู้แจ้ง:</strong> <span id="tn-creator"></span></p>
+                <p><strong>ชื่อหลักสูตร:</strong> <span id="tn-course-name"></span></p>
+                <p><strong>ด้านการฝึกอบรม:</strong> <span id="tn-training-area"></span></p>
+                <p><strong>ปัญหา/ความจำเป็น:</strong> <span id="tn-problem"></span></p>
+                <p><strong>สิ่งที่คาดหวัง:</strong> <span id="tn-expected-results"></span></p>
+                <p><strong>เนื้อหาพิเศษ:</strong> <span id="tn-special-needs"></span></p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal for Training Needs by Area -->
+    <div id="training-needs-by-area-modal" class="fixed inset-0 bg-black bg-opacity-50 z-40 hidden items-center justify-center">
+        <div class="bg-white rounded-lg shadow-xl p-8 max-w-3xl w-full">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold" id="area-modal-title"></h2>
+                <button id="close-area-modal-btn" class="text-gray-600 hover:text-gray-800">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="overflow-y-auto max-h-[70vh]">
+                <table class="w-full text-sm text-left">
+                    <thead class="bg-gray-100 text-gray-600 uppercase sticky top-0">
+                        <tr>
+                            <th class="p-4">ชื่อหลักสูตร</th>
+                            <th class="p-4">ผู้แจ้ง</th>
+                            <th class="p-4">วันที่แจ้ง</th>
+                            <th class="p-4"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="area-modal-table-body">
+                        <!-- Rows will be populated dynamically -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const roleSwitcher = document.getElementById('role-switcher');
+            const navMenu = document.getElementById('nav-menu');
+            const pageTitle = document.getElementById('page-title');
+            const mainContent = document.getElementById('main-content');
+            const userName = document.getElementById('user-name');
+            const userRoleText = document.getElementById('user-role-text');
+            const openSidebarBtn = document.getElementById('open-sidebar-btn');
+            const closeSidebarBtn = document.getElementById('close-sidebar-btn');
+            const sidebar = document.getElementById('sidebar');
+
+            let currentRole = 'user';
+            let currentYear = '2025'; // Default to current year
+            let chartInstances = {};
+
+            const userProfiles = {
+                user: { name: 'สมชาย ใจดี', roleText: 'ผู้ใช้งานทั่วไป' },
+                approver: { name: 'สมหญิง เก่งมาก', roleText: 'ผู้อนุมัติ' },
+                hr: { name: 'สมศักดิ์ ทรัพยากร', roleText: 'แผนกพัฒนาบุคคล' }
+            };
+            
+            const availableYears = ['2025', '2024'];
+
+            const allTrainingAreas = [
+                "ด้านการก่อสร้างสถานีไฟฟ้าและระบบไฟฟ้า",
+                "ด้านการบำรุงรักษาสถานีไฟฟ้าและระบบไฟฟ้า",
+                "ด้านการควบคุมการจ่ายไฟฟ้า",
+                "ด้าน Hotline",
+                "ด้านเทคโนโลยีสารสนเทศ และ นวัตกรรม (Innovation)",
+                "ด้านการกำกับดูแลกิจการที่ดี การบริหารความเสี่ยง การปฏิบัติตามกฎระเบียบข้อบังคับ (GRC) และ การจัดการเชิงนโยบายและยุทธศาสตร์",
+                "ด้านภาษาต่างประเทศ",
+                "ด้านการกำกับบริษัทลูกและบริษัทร่วมทุน โครงการ และการลงทุน (Portfolio Management)",
+                "ด้านการจัดหาและผลิตพลังงานไฟฟ้า และการจัดการด้านพลังงาน",
+                "ด้านการวางแผนและพัฒนาระบบไฟฟ้า",
+                "ด้านการออกแบบสถานีไฟฟ้าและระบบไฟฟ้า",
+                "ด้านการตลาด การสร้างความสัมพันธ์ลูกค้า และการบริการลูกค้า",
+                "ด้านการจัดการพัสดุ การบริหารจัดการผู้ส่งมอบ คู่ค้าและคู่ความร่วมมือ และการจัดการ logistics",
+                "ด้านงบประมาณ บัญชีและการเงิน",
+                "ด้านทรัพยากรบุคคล และการจัดการความรู้",
+                "ด้านการประชาสัมพันธ์ และ CSR",
+                "ด้านนโยบาย ผวก. คนปัจจุบัน",
+                "ด้านนโยบาย ผชก. คนปัจจุบัน"
+            ];
+
+            const menuConfig = {
+                user: [
+                    { id: 'dashboard', icon: 'fa-tachometer-alt', text: 'ภาพรวม Dashboard' },
+                    { id: 'request-training-need', icon: 'fa-lightbulb', text: 'แจ้งความต้องการฝึกอบรม' },
+                    { id: 'my-plans', icon: 'fa-folder', text: 'แผนของฉัน', submenu: true, submenuItems: [
+                        { id: 'my-training-plans', icon: 'fa-chalkboard-teacher', text: 'แผนฝึกอบรม' },
+                        { id: 'my-meeting-plans', icon: 'fa-handshake', text: 'แผนจัดประชุมชี้แจง' }
+                    ]},
+                    { id: 'approval', icon: 'fa-check-circle', text: 'รายการรออนุมัติ' },
+                    { id: 'speaker-fee', icon: 'fa-coins', text: 'ข้อมูลค่าวิทยากร' }
+                ],
+                approver: [
+                    { id: 'dashboard', icon: 'fa-tachometer-alt', text: 'ภาพรวม Dashboard' },
+                    { id: 'request-training-need', icon: 'fa-lightbulb', text: 'แจ้งความต้องการฝึกอบรม' },
+                    { id: 'approval', icon: 'fa-check-circle', text: 'รายการรออนุมัติ' }
+                ],
+                hr: [
+                    { id: 'dashboard', icon: 'fa-tachometer-alt', text: 'ภาพรวม Dashboard' },
+                    { id: 'request-training-need', icon: 'fa-lightbulb', text: 'แจ้งความต้องการฝึกอบรม' },
+                    { id: 'my-plans', icon: 'fa-folder', text: 'แผนของฉัน', submenu: true, submenuItems: [
+                        { id: 'my-training-plans', icon: 'fa-chalkboard-teacher', text: 'แผนฝึกอบรม' },
+                        { id: 'my-meeting-plans', icon: 'fa-handshake', text: 'แผนจัดประชุมชี้แจง' }
+                    ]},
+                    { id: 'all-plans', icon: 'fa-globe', text: 'แผนทั้งหมด' },
+                    { id: 'approval', icon: 'fa-check-circle', text: 'รายการรออนุมัติ (แผนกพัฒนาบุคคล)' },
+                    { id: 'annual-budget', icon: 'fa-dollar-sign', text: 'งบประมาณประจำปี' },
+                    { id: 'speaker-fee', icon: 'fa-coins', text: 'ข้อมูลค่าวิทยากร' }
+                ]
+            };
+            
+            const planStatuses = {
+                DRAFT: 'ร่างเอกสาร',
+                WAIT_DEPT_HEAD: 'รอ อก. อนุมัติ',
+                WAIT_DIV_HEAD: 'รอ อฝ. อนุมัติ',
+                WAIT_COMMITTEE: 'รอ คณะกรรมการอนุมัติ',
+                APPROVED: 'ผชก. อนุมัติ',
+                REJECTED: 'ไม่อนุมัติ',
+                NEED_REVISION: 'ส่งกลับแก้ไข'
+            };
+
+            const annualBudgets = {
+                '2025': { training: 5000000, meeting: 1500000 },
+                '2024': { training: 4500000, meeting: 1200000 }
+            };
+
+            const samplePlans = [
+                { 
+                    id: 1, name: 'อบรม Effective Communication', type: 'ฝึกอบรม', creator: 'สมชาย ใจดี', department: 'ฝสบ.', date: '2025-09-01', status: planStatuses.WAIT_DEPT_HEAD, year: '2025',
+                    details: 'เป็นหลักสูตรเพื่อพัฒนาทักษะการสื่อสารและการนำเสนอสำหรับทีมขาย',
+                    courseSource: 'คำขอฝึกอบรมจากพนักงาน', vendor: 'สถาบัน ABC Learning', locationType: 'ภายนอก',
+                    participants: [
+                        { group: 'แผนกการตลาด', count: 15, type: 'กลุ่มเป้าหมาย' },
+                        { group: 'แผนกขาย', count: 10, type: 'กลุ่มเป้าหมาย' },
+                        { group: 'วิทยากรภายนอก', count: 1, type: 'วิทยากร' }
+                    ],
+                    expenses: [
+                        { expenseType: 'operational', type: 'ค่าใช้จ่ายดำเนินการ', description: 'ค่าเช่าห้องอบรม', unit: 'วัน', quantity: 2, price: 5000, total: 10000 },
+                        { expenseType: 'food', type: 'ค่าอาหารว่างและเครื่องดื่ม', description: 'อาหารว่างเช้า', unit: 'ชุด', quantity: 25, price: 50, total: 1250 },
+                        { expenseType: 'food', type: 'ค่าอาหารว่างและเครื่องดื่ม', description: 'อาหารกลางวัน', unit: 'ชุด', quantity: 25, price: 120, total: 3000 },
+                    ]
+                },
+                { 
+                    id: 2, name: 'ประชุมแผนกการตลาด Q4', type: 'จัดประชุม', creator: 'สมชาย ใจดี', department: 'ฝวบ.', date: '2025-09-02', status: planStatuses.APPROVED, year: '2025',
+                    details: 'ประชุมสรุปผลงานไตรมาส 3 และวางแผนสำหรับไตรมาส 4', format: 'Onsite', startDate: '2025-10-05', endDate: '2025-10-05',
+                    participants: [ { group: 'ทีมการตลาดทั้งหมด', count: 20, type: 'กลุ่มเป้าหมาย' } ],
+                    expenses: [
+                        { expenseType: 'food', type: 'งบประมาณ', description: 'ค่าอาหารกลางวัน', unit: 'คน', quantity: 20, price: 150, total: 3000 },
+                        { expenseType: 'operational', type: 'งบประมาณ', description: 'ค่าเช่าห้องประชุม', unit: 'วัน', quantity: 1, price: 3000, total: 3000 }
+                    ]
+                },
+                { id: 3, name: 'อบรม Project Management', type: 'ฝึกอบรม', creator: 'มานี มีสุข', department: 'ฝวบ.', date: '2025-09-05', status: planStatuses.WAIT_COMMITTEE, year: '2025', details: 'หลักสูตรการบริหารโครงการสำหรับผู้จัดการระดับต้น', participants: [], expenses: [] },
+                { id: 4, name: 'อบรมภาวะผู้นำ', type: 'ฝึกอบรม', creator: 'ปิติ ชูใจ', department: 'กสข.', date: '2025-08-20', status: planStatuses.NEED_REVISION, year: '2025', details: 'กรุณาปรับลดงบประมาณ', participants: [], expenses: [] },
+                { id: 5, name: 'ประชุมสรุปยอดขายประจำเดือน', type: 'จัดประชุม', creator: 'มานะ พากเพียร', department: 'ฝปบ.', date: '2025-08-28', status: planStatuses.APPROVED, year: '2025', details: 'ประชุมออนไลน์ผ่าน MS Teams', participants: [], expenses: [] },
+                { id: 6, name: 'อบรม Digital Marketing', type: 'ฝึกอบรม', creator: 'มานะ พากเพียร', department: 'ฝสบ.', date: '2024-05-10', status: planStatuses.APPROVED, year: '2024', details: 'อบรมโดยวิทยากรภายนอก', participants: [], expenses: [] },
+                { id: 7, name: 'ประชุมประจำปี', type: 'จัดประชุม', creator: 'สมหญิง เก่งมาก', department: 'ฝปบ.', date: '2024-02-15', status: planStatuses.APPROVED, year: '2024', details: 'ประชุมใหญ่ประจำปี 2567', participants: [], expenses: [] },
+                { id: 8, name: 'อบรมการใช้งานระบบใหม่', type: 'ฝึกอบรม', creator: 'สมชาย ใจดี', department: 'ฝสบ.', date: '2025-09-15', status: planStatuses.DRAFT, year: '2025', details: 'ร่างแผนอบรมการใช้งานระบบ HRD NE2', participants: [], expenses: [] },
+            ];
+
+            const sampleTrainingNeeds = [
+                { id: 1, name: 'การสื่อสารในที่ทำงาน', trainingArea: 'ด้านทรัพยากรบุคคล และการจัดการความรู้', creator: 'สมชาย ใจดี', date: '2025-09-10', status: 'รอพิจารณา', problem: 'ปัญหาการสื่อสารที่ผิดพลาดระหว่างทีม', expectedResults: 'สามารถสื่อสารได้อย่างชัดเจนและลดความขัดแย้ง', specialNeeds: 'มี workshop ฝึกปฏิบัติ', year: '2025' },
+                { id: 2, name: 'การวิเคราะห์ข้อมูลด้วย Power BI', trainingArea: 'ด้านเทคโนโลยีสารสนเทศ และ นวัตกรรม (Innovation)', creator: 'มานี มีสุข', date: '2025-09-08', status: 'อนุมัติแล้ว', problem: 'ต้องการเครื่องมือที่ช่วยวิเคราะห์ข้อมูลยอดขาย', expectedResults: 'สร้าง dashboard และ report ได้ด้วยตนเอง', specialNeeds: '', year: '2025' },
+                { id: 3, name: 'เทคนิคการนำเสนออย่างมืออาชีพ', trainingArea: 'ด้านทรัพยากรบุคคล และการจัดการความรู้', creator: 'สมชาย ใจดี', date: '2025-09-05', status: 'รอพิจารณา', problem: 'พนักงานขาดทักษะการนำเสนอให้ลูกค้าสนใจ', expectedResults: 'นำเสนอได้อย่างน่าเชื่อถือและเพิ่มโอกาสการขาย', specialNeeds: '', year: '2025' },
+                { id: 4, name: 'พื้นฐานการเขียนโปรแกรม Python', trainingArea: 'ด้านเทคโนโลยีสารสนเทศ และ นวัตกรรม (Innovation)', creator: 'สมหญิง เก่งมาก', date: '2025-09-01', status: 'ไม่อนุมัติ', problem: 'ต้องการเรียนรู้ภาษาโปรแกรมเพื่อ Automate งานที่ทำอยู่', expectedResults: 'สามารถเขียน script ง่ายๆ เพื่อช่วยงานได้', specialNeeds: 'เน้นการใช้งานในงานจริง', year: '2025' },
+                { id: 5, name: 'การบริหารเวลาและจัดลำดับความสำคัญ', trainingArea: 'ด้านทรัพยากรบุคคล และการจัดการความรู้', creator: 'ปิติ ชูใจ', date: '2025-08-28', status: 'รอพิจารณา', problem: 'งานล้นมือและส่งงานไม่ตรงเวลา', expectedResults: 'สามารถบริหารจัดการตารางงานและทำงานได้มีประสิทธิภาพมากขึ้น', specialNeeds: '', year: '2025' },
+                { id: 6, name: 'การบริหารการเงินส่วนบุคคล', trainingArea: 'ด้านงบประมาณ บัญชีและการเงิน', creator: 'สมชาย ใจดี', date: '2024-03-10', status: 'อนุมัติแล้ว', problem: 'พนักงานต้องการความรู้ในการวางแผนการเงิน', expectedResults: 'สามารถวางแผนการเงินและออมเงินได้อย่างมีประสิทธิภาพ', specialNeeds: '', year: '2024' },
+            ];
+            
+            // Group training needs by area
+            const trainingNeedsByArea = sampleTrainingNeeds.reduce((acc, need) => {
+                if (!acc[need.trainingArea]) {
+                    acc[need.trainingArea] = [];
+                }
+                acc[need.trainingArea].push(need);
+                return acc;
+            }, {});
+            
+            function getStatusBadgeClass(status) {
+                switch(status) {
+                    case planStatuses.APPROVED:
+                        return 'bg-green-100 text-green-800';
+                    case planStatuses.WAIT_DEPT_HEAD:
+                    case planStatuses.WAIT_DIV_HEAD:
+                    case planStatuses.WAIT_COMMITTEE:
+                        return 'bg-yellow-100 text-yellow-800';
+                    case planStatuses.DRAFT:
+                        return 'bg-gray-200 text-gray-800';
+                    case planStatuses.NEED_REVISION:
+                        return 'bg-orange-100 text-orange-800';
+                    case planStatuses.REJECTED:
+                        return 'bg-red-100 text-red-800';
+                    default:
+                        return 'bg-blue-100 text-blue-800';
+                }
+            }
+
+
+            function renderMenu() {
+                const menus = menuConfig[currentRole];
+                navMenu.innerHTML = menus.map(item => {
+                    if (item.submenu) {
+                        const submenuItems = item.submenuItems.map(subItem => `
+                            <a href="#" data-page="${subItem.id}" class="nav-link sub-link flex items-center p-3 pl-12 text-gray-600 rounded-lg hover:bg-indigo-100 hover:text-indigo-600 transition-colors">
+                                <i class="fas ${subItem.icon} w-6 text-center"></i>
+                                <span class="ml-4">${subItem.text}</span>
+                            </a>
+                        `).join('');
+                        return `
+                            <div class="menu-item">
+                                <a href="#" data-page="${item.id}" class="nav-link main-link flex items-center p-3 my-1 text-gray-600 rounded-lg hover:bg-indigo-100 hover:text-indigo-600 transition-colors">
+                                    <i class="fas ${item.icon} w-6 text-center"></i>
+                                    <span class="ml-4">${item.text}</span>
+                                    <i class="fas fa-chevron-down ml-auto submenu-toggle transform"></i>
+                                </a>
+                                <div class="submenu transition-all duration-300 overflow-hidden">
+                                    ${submenuItems}
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        return `
+                            <a href="#" data-page="${item.id}" class="nav-link flex items-center p-3 my-1 text-gray-600 rounded-lg hover:bg-indigo-100 hover:text-indigo-600 transition-colors">
+                                <i class="fas ${item.icon} w-6 text-center"></i>
+                                <span class="ml-4">${item.text}</span>
+                            </a>
+                        `;
+                    }
+                }).join('');
+
+                document.querySelectorAll('.nav-link').forEach(link => {
+                    link.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        const pageId = this.dataset.page;
+                        if (menuConfig[currentRole].find(m => m.id === pageId)?.submenu) {
+                            const submenu = this.nextElementSibling;
+                            submenu.classList.toggle('active');
+                            this.querySelector('.submenu-toggle').classList.toggle('rotate-180');
+                        } else {
+                            renderPage(pageId);
+                        }
+                        
+                        // Close sidebar on item click on mobile
+                        if (window.innerWidth < 768) {
+                            sidebar.classList.add('-translate-x-full');
+                        }
+                    });
+                });
+                
+                // Set active link
+                const firstLink = document.querySelector('.nav-link');
+                if (firstLink) {
+                    firstLink.classList.add('bg-indigo-100', 'text-indigo-600', 'font-semibold');
+                }
+            }
+            
+            function destroyCharts() {
+                Object.values(chartInstances).forEach(chart => chart.destroy());
+                chartInstances = {};
+            }
+
+            function renderPage(pageId) {
+                destroyCharts();
+                const menuItem = menuConfig[currentRole].find(m => m.id === pageId);
+                let subMenuItem;
+                if (!menuItem) {
+                    menuConfig[currentRole].forEach(menu => {
+                        if (menu.submenu) {
+                            subMenuItem = menu.submenuItems.find(sub => sub.id === pageId);
+                            if (subMenuItem) {
+                                pageTitle.textContent = subMenuItem.text;
+                            }
+                        }
+                    });
+                } else {
+                     pageTitle.textContent = menuItem.text;
+                }
+
+                 document.querySelectorAll('.nav-link').forEach(link => {
+                    link.classList.remove('bg-indigo-100', 'text-indigo-600', 'font-semibold');
+                    if(link.dataset.page === pageId) {
+                        link.classList.add('bg-indigo-100', 'text-indigo-600', 'font-semibold');
+                    }
+                });
+
+                switch (pageId) {
+                    case 'dashboard':
+                        mainContent.innerHTML = getDashboardContent();
+                        setupYearFilter();
+                        renderDashboardCharts(currentYear);
+                        break;
+                    case 'request-training-need':
+                        mainContent.innerHTML = getTrainingNeedContent();
+                        break;
+                    case 'all-training-needs':
+                        mainContent.innerHTML = getAllTrainingNeedsContent();
+                        break;
+                    case 'my-training-plans':
+                        mainContent.innerHTML = getPlansContent('my-training-plans');
+                        setupCreateNewPlanButton();
+                        break;
+                    case 'my-meeting-plans':
+                         mainContent.innerHTML = getPlansContent('my-meeting-plans');
+                         setupCreateNewPlanButton();
+                         break;
+                    case 'approval':
+                        mainContent.innerHTML = getPlansContent('approval');
+                        break;
+                    case 'all-plans':
+                        mainContent.innerHTML = getPlansContent('all-plans');
+                        break;
+                    case 'speaker-fee':
+                        mainContent.innerHTML = getSpeakerFeeContent();
+                        break;
+                    case 'annual-budget':
+                        mainContent.innerHTML = getAnnualBudgetContent();
+                        setupAnnualBudgetPage();
+                        break;
+                    case 'create-training-plan':
+                        mainContent.innerHTML = getCreateTrainingPlanContent();
+                        setupCreatePlanForm();
+                        break;
+                    case 'create-meeting-plan':
+                        mainContent.innerHTML = getCreateMeetingPlanContent();
+                        setupCreateMeetingPlanForm();
+                        break;
+                }
+            }
+            
+            function setupYearFilter() {
+                const yearFilter = document.getElementById('year-filter');
+                if (yearFilter) {
+                    yearFilter.innerHTML = availableYears.map(year => `
+                        <option value="${year}" ${year === currentYear ? 'selected' : ''}>${year}</option>
+                    `).join('');
+                    
+                    yearFilter.addEventListener('change', (e) => {
+                        currentYear = e.target.value;
+                        destroyCharts();
+                        renderDashboardCharts(currentYear);
+                    });
+                }
+            }
+            
+            function getDashboardContent() {
+                 const yearOptions = availableYears.map(year => `<option value="${year}" ${year === currentYear ? 'selected' : ''}>${year}</option>`).join('');
+                return `
+                    <div class="flex justify-between items-center mb-6">
+                        <div class="intro-paragraph">
+                            <h3 class="font-semibold text-lg text-indigo-700">ยินดีต้อนรับสู่ Dashboard</h3>
+                            <p class="text-gray-600 mt-1">
+                                หน้านี้คือศูนย์กลางในการสรุปข้อมูลภาพรวมทั้งหมดของระบบบริหารงานทรัพยากรบุคคล
+                            </p>
+                        </div>
+                         <div class="flex items-center space-x-2">
+                             <label for="year-filter" class="text-sm font-medium">กรองตามปี:</label>
+                             <select id="year-filter" class="p-2 rounded-md border bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                 ${yearOptions}
+                             </select>
+                         </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                        <!-- Training Budget Card -->
+                        <div class="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+                            <div class="flex items-center justify-between mb-2">
+                                <h4 class="text-lg font-bold text-blue-800">สรุปงบประมาณแผนฝึกอบรม</h4>
+                                <i class="fas fa-dollar-sign text-2xl text-blue-400"></i>
+                            </div>
+                            <p class="text-sm text-gray-700">งบประมาณทั้งหมด: <span id="db-training-budget-total" class="font-semibold">0</span> บาท</p>
+                            <p class="text-sm text-gray-700">ใช้ไปแล้ว: <span id="db-training-budget-used" class="font-semibold text-red-600">0</span> บาท</p>
+                            <p class="text-md text-green-700 font-bold mt-1">คงเหลือ: <span id="db-training-budget-remaining" class="font-semibold">0</span> บาท</p>
+                            <div class="w-full bg-gray-200 rounded-full h-4 mt-4 overflow-hidden">
+                                <div id="db-training-budget-progress" class="bg-blue-600 h-4 rounded-full text-white text-xs flex items-center justify-center" style="width: 0%">
+                                   0%
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Meeting Budget Card -->
+                        <div class="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+                            <div class="flex items-center justify-between mb-2">
+                                <h4 class="text-lg font-bold text-purple-800">สรุปงบประมาณจัดประชุมชี้แจง</h4>
+                                <i class="fas fa-comments-dollar text-2xl text-purple-400"></i>
+                            </div>
+                            <p class="text-sm text-gray-700">งบประมาณทั้งหมด: <span id="db-meeting-budget-total" class="font-semibold">0</span> บาท</p>
+                            <p class="text-sm text-gray-700">ใช้ไปแล้ว: <span id="db-meeting-budget-used" class="font-semibold text-red-600">0</span> บาท</p>
+                            <p class="text-md text-green-700 font-bold mt-1">คงเหลือ: <span id="db-meeting-budget-remaining" class="font-semibold">0</span> บาท</p>
+                            <div class="w-full bg-gray-200 rounded-full h-4 mt-4 overflow-hidden">
+                                <div id="db-meeting-budget-progress" class="bg-purple-600 h-4 rounded-full text-white text-xs flex items-center justify-center" style="width: 0%">
+                                   0%
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Training Plans Section -->
+                        <div class="bg-white p-6 rounded-lg shadow">
+                            <h2 class="text-xl font-bold mb-4 text-blue-600">แผนฝึกอบรม</h2>
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                                <div class="bg-blue-50 p-4 rounded-lg flex items-center justify-between">
+                                    <div>
+                                        <p class="text-blue-800">ทั้งหมด</p>
+                                        <p class="text-2xl font-bold text-blue-600" id="training-total"></p>
+                                    </div>
+                                    <i class="fas fa-chalkboard-teacher text-3xl text-blue-400"></i>
+                                </div>
+                                <div class="bg-yellow-50 p-4 rounded-lg flex items-center justify-between">
+                                    <div>
+                                        <p class="text-yellow-800">รออนุมัติ</p>
+                                        <p class="text-2xl font-bold text-yellow-600" id="training-pending"></p>
+                                    </div>
+                                    <i class="fas fa-clock text-3xl text-yellow-400"></i>
+                                </div>
+                                <div class="bg-green-50 p-4 rounded-lg flex items-center justify-between">
+                                    <div>
+                                        <p class="text-green-800">อนุมัติแล้ว</p>
+                                        <p class="text-2xl font-bold text-green-600" id="training-approved"></p>
+                                    </div>
+                                    <i class="fas fa-check-double text-3xl text-green-400"></i>
+                                </div>
+                            </div>
+                             <h3 class="font-semibold mb-4 text-gray-700">สถานะแผนฝึกอบรม</h3>
+                             <div class="chart-container"><canvas id="trainingStatusChart"></canvas></div>
+                        </div>
+
+                        <!-- Meeting Plans Section -->
+                        <div class="bg-white p-6 rounded-lg shadow">
+                            <h2 class="text-xl font-bold mb-4 text-purple-600">แผนจัดประชุม</h2>
+                             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                                <div class="bg-purple-50 p-4 rounded-lg flex items-center justify-between">
+                                    <div>
+                                        <p class="text-purple-800">ทั้งหมด</p>
+                                        <p class="text-2xl font-bold text-purple-600" id="meeting-total"></p>
+                                    </div>
+                                    <i class="fas fa-handshake text-3xl text-purple-400"></i>
+                                </div>
+                                <div class="bg-yellow-50 p-4 rounded-lg flex items-center justify-between">
+                                    <div>
+                                        <p class="text-yellow-800">รออนุมัติ</p>
+                                        <p class="text-2xl font-bold text-yellow-600" id="meeting-pending"></p>
+                                    </div>
+                                    <i class="fas fa-clock text-3xl text-yellow-400"></i>
+                                </div>
+                                <div class="bg-green-50 p-4 rounded-lg flex items-center justify-between">
+                                    <div>
+                                        <p class="text-green-800">อนุมัติแล้ว</p>
+                                        <p class="text-2xl font-bold text-green-600" id="meeting-approved"></p>
+                                    </div>
+                                    <i class="fas fa-check-double text-3xl text-green-400"></i>
+                                </div>
+                            </div>
+                            <h3 class="font-semibold mb-4 text-gray-700">สถานะแผนจัดประชุม</h3>
+                            <div class="chart-container"><canvas id="meetingStatusChart"></canvas></div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-6 bg-white p-6 rounded-lg shadow">
+                         <h3 class="font-semibold mb-4">จำนวนแผน (ตามหน่วยงาน)</h3>
+                         <div class="chart-container"><canvas id="departmentChart"></canvas></div>
+                    </div>
+
+                    <div class="mt-6 bg-white p-6 rounded-lg shadow">
+                        <div class="intro-paragraph mb-6">
+                            <h2 class="text-xl font-bold mb-4 text-orange-600">จำนวนความต้องการฝึกอบรมในแต่ละด้าน</h2>
+                        </div>
+                        <div class="overflow-x-auto">
+                           <table class="w-full text-sm text-left">
+                                <thead class="bg-gray-100 text-gray-600 uppercase">
+                                    <tr>
+                                        <th class="p-4">ด้านที่ต้องการฝึกอบรม</th>
+                                        <th class="p-4 text-center">จำนวน (รายการ)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="training-needs-table-body">
+                                    <!-- Rows will be populated dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+            }
+
+            function renderDashboardCharts(year) {
+                const filteredPlans = samplePlans.filter(p => p.year === year);
+                const filteredTrainingNeeds = sampleTrainingNeeds.filter(n => n.year === year);
+                
+                // --- Budget Calculation & Card Update ---
+                const budgetForYear = annualBudgets[year] || { training: 0, meeting: 0 };
+                
+                // Training Budget
+                const approvedTrainingPlans = filteredPlans.filter(p => p.type === 'ฝึกอบรม' && p.status === planStatuses.APPROVED);
+                const usedTrainingBudget = approvedTrainingPlans.reduce((sum, plan) => sum + (plan.expenses || []).reduce((cost, exp) => cost + exp.total, 0), 0);
+                const remainingTrainingBudget = budgetForYear.training - usedTrainingBudget;
+                const trainingProgress = budgetForYear.training > 0 ? (usedTrainingBudget / budgetForYear.training) * 100 : 0;
+
+                document.getElementById('db-training-budget-total').textContent = budgetForYear.training.toLocaleString();
+                document.getElementById('db-training-budget-used').textContent = usedTrainingBudget.toLocaleString();
+                document.getElementById('db-training-budget-remaining').textContent = remainingTrainingBudget.toLocaleString();
+                const trainingProgressBar = document.getElementById('db-training-budget-progress');
+                trainingProgressBar.style.width = `${trainingProgress.toFixed(2)}%`;
+                trainingProgressBar.textContent = `${trainingProgress.toFixed(0)}%`;
+                
+                // Meeting Budget
+                const approvedMeetingPlans = filteredPlans.filter(p => p.type === 'จัดประชุม' && p.status === planStatuses.APPROVED);
+                const usedMeetingBudget = approvedMeetingPlans.reduce((sum, plan) => sum + (plan.expenses || []).reduce((cost, exp) => cost + exp.total, 0), 0);
+                const remainingMeetingBudget = budgetForYear.meeting - usedMeetingBudget;
+                const meetingProgress = budgetForYear.meeting > 0 ? (usedMeetingBudget / budgetForYear.meeting) * 100 : 0;
+                
+                document.getElementById('db-meeting-budget-total').textContent = budgetForYear.meeting.toLocaleString();
+                document.getElementById('db-meeting-budget-used').textContent = usedMeetingBudget.toLocaleString();
+                document.getElementById('db-meeting-budget-remaining').textContent = remainingMeetingBudget.toLocaleString();
+                const meetingProgressBar = document.getElementById('db-meeting-budget-progress');
+                meetingProgressBar.style.width = `${meetingProgress.toFixed(2)}%`;
+                meetingProgressBar.textContent = `${meetingProgress.toFixed(0)}%`;
+                // --- End Budget Calculation ---
+
+                // Filter data for training and meeting plans
+                const trainingPlans = filteredPlans.filter(p => p.type === 'ฝึกอบรม');
+                const meetingPlans = filteredPlans.filter(p => p.type === 'จัดประชุม');
+                
+                const pendingStatuses = [planStatuses.WAIT_DEPT_HEAD, planStatuses.WAIT_DIV_HEAD, planStatuses.WAIT_COMMITTEE];
+                
+                // Update KPI cards
+                document.getElementById('training-total').textContent = trainingPlans.length;
+                document.getElementById('training-approved').textContent = trainingPlans.filter(p => p.status === planStatuses.APPROVED).length;
+                document.getElementById('training-pending').textContent = trainingPlans.filter(p => pendingStatuses.includes(p.status)).length;
+
+                document.getElementById('meeting-total').textContent = meetingPlans.length;
+                document.getElementById('meeting-approved').textContent = meetingPlans.filter(p => p.status === planStatuses.APPROVED).length;
+                document.getElementById('meeting-pending').textContent = meetingPlans.filter(p => pendingStatuses.includes(p.status)).length;
+
+                // Training Status Chart
+                const trainingStatusCtx = document.getElementById('trainingStatusChart').getContext('2d');
+                chartInstances.trainingStatusChart = new Chart(trainingStatusCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: [planStatuses.DRAFT, 'รออนุมัติ', planStatuses.APPROVED, planStatuses.REJECTED],
+                        datasets: [{
+                            data: [
+                                trainingPlans.filter(p => p.status === planStatuses.DRAFT).length,
+                                trainingPlans.filter(p => pendingStatuses.includes(p.status)).length,
+                                trainingPlans.filter(p => p.status === planStatuses.APPROVED).length,
+                                trainingPlans.filter(p => p.status === planStatuses.REJECTED).length,
+                            ],
+                            backgroundColor: ['#E5E7EB', '#FBBF24', '#34D399', '#F87171'],
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+
+                // Meeting Status Chart
+                const meetingStatusCtx = document.getElementById('meetingStatusChart').getContext('2d');
+                chartInstances.meetingStatusChart = new Chart(meetingStatusCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: [planStatuses.DRAFT, 'รออนุมัติ', planStatuses.APPROVED, planStatuses.REJECTED],
+                        datasets: [{
+                            data: [
+                                meetingPlans.filter(p => p.status === planStatuses.DRAFT).length,
+                                meetingPlans.filter(p => pendingStatuses.includes(p.status)).length,
+                                meetingPlans.filter(p => p.status === planStatuses.APPROVED).length,
+                                meetingPlans.filter(p => p.status === planStatuses.REJECTED).length,
+                            ],
+                            backgroundColor: ['#E5E7EB', '#FBBF24', '#34D399', '#F87171'],
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
+
+                // Combined Department Chart
+                const departmentCtx = document.getElementById('departmentChart').getContext('2d');
+                const departments = ['ฝสบ.', 'ฝวบ.', 'ฝปบ.', 'กสข.'];
+                
+                const trainingData = departments.map(dept => trainingPlans.filter(p => p.department === dept).length);
+                const meetingData = departments.map(dept => meetingPlans.filter(p => p.department === dept).length);
+
+                chartInstances.departmentChart = new Chart(departmentCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: departments,
+                        datasets: [
+                            {
+                                label: 'แผนฝึกอบรม',
+                                data: trainingData,
+                                backgroundColor: '#818CF8', // Blue
+                            },
+                             {
+                                label: 'แผนจัดประชุม',
+                                data: meetingData,
+                                backgroundColor: '#A78BFA', // Purple
+                            }
+                        ]
+                    },
+                    options: { 
+                        responsive: true, 
+                        maintainAspectRatio: false, 
+                        scales: { 
+                            x: { stacked: true },
+                            y: { beginAtZero: true, stacked: true } 
+                        } 
+                    }
+                });
+                
+                 // Update training needs table
+                const trainingNeedsByAreaThisYear = filteredTrainingNeeds.reduce((acc, need) => {
+                    if (!acc[need.trainingArea]) {
+                        acc[need.trainingArea] = [];
+                    }
+                    acc[need.trainingArea].push(need);
+                    return acc;
+                }, {});
+
+                const tableRows = allTrainingAreas.map(area => {
+                    const needsInArea = trainingNeedsByAreaThisYear[area] || [];
+                    const count = needsInArea.length;
+                    const countDisplay = count > 0 
+                        ? `<button class="text-indigo-600 hover:text-indigo-800 view-by-area-btn font-semibold" data-area-name="${area}">${count}</button>`
+                        : '0';
+
+                    return `
+                        <tr class="hover:bg-gray-50 border-b">
+                            <td class="p-4">${area}</td>
+                            <td class="p-4 text-center">
+                                ${countDisplay}
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+                document.getElementById('training-needs-table-body').innerHTML = tableRows;
+            }
+
+
+            function getTrainingNeedContent() {
+                return `
+                    <div class="bg-white p-6 rounded-lg shadow">
+                         <div class="intro-paragraph mb-6">
+                            <h3 class="font-semibold text-lg text-indigo-700">แจ้งความต้องการฝึกอบรม</h3>
+                            <p class="text-gray-600 mt-1">ส่วนนี้ช่วยให้คุณสามารถส่งคำร้องขอเข้ารับการฝึกอบรมในหัวข้อต่างๆ ที่คุณสนใจ หรือที่จำเป็นต่อการพัฒนางานของคุณ กรอกรายละเอียดด้านล่างแล้วกดส่ง เพื่อให้หัวหน้างานและแผนกพัฒนาบุคคลพิจารณาต่อไป</p>
+                        </div>
+                        <h2 class="text-2xl font-bold mb-4">ข้อมูลฝึกอบรม</h2>
+                        <form class="space-y-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="trainingType" class="block text-sm font-medium text-gray-700">ต้องการฝึกอบรมด้านใด</label>
+                                    <select id="trainingType" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                        <option>--- เลือก ---</option>
+                                        <option>Skill Development</option>
+                                        <option>Knowledge Enhancement</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="courseName" class="block text-sm font-medium text-gray-700">ชื่อหลักสูตร</label>
+                                    <input type="text" id="courseName" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="เช่น การสื่อสารอย่างมีประสิทธิภาพ">
+                                </div>
+                            </div>
+                            <div class="flex flex-col md:flex-row md:items-center space-y-2 md:space-y-0 md:space-x-4">
+                                <label class="block text-sm font-medium text-gray-700">รูปแบบการฝึกอบรม</label>
+                                <div class="flex space-x-4 mt-1 md:mt-0 radio-container">
+                                    <input type="radio" id="online" name="format" value="Online" checked>
+                                    <label for="online" class="rounded-full px-4 py-2 text-sm font-semibold">Online</label>
+                                    <input type="radio" id="onsite" name="format" value="Onsite">
+                                    <label for="onsite" class="rounded-full px-4 py-2 text-sm font-semibold">Onsite</label>
+                                </div>
+                            </div>
+                            <div class="mt-4">
+                                <label for="problem" class="block text-sm font-medium text-gray-700">ปัญหาหรือความจำเป็นที่ต้องการฝึกอบรม</label>
+                                <textarea id="problem" rows="3" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="เช่น เพื่อแก้ปัญหาการสื่อสารที่ผิดพลาดระหว่างทีม..."></textarea>
+                            </div>
+                            <div class="mt-4">
+                                <label for="expectedResults" class="block text-sm font-medium text-gray-700">สิ่งที่คาดหวังหลังฝึกอบรม</label>
+                                <textarea id="expectedResults" rows="3" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="เช่น สามารถใช้สูตร Excel ขั้นสูง เช่น Pivot Table และเขียนสูตร Macro ได้"></textarea>
+                            </div>
+                             <div class="mt-4">
+                                <label for="specialNeeds" class="block text-sm font-medium text-gray-700">เนื้อหาที่ต้องการพิเศษ</label>
+                                <textarea id="specialNeeds" rows="3" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder=""></textarea>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="interestedSpeaker" class="block text-sm font-medium text-gray-700">ผู้จัดอบรมที่สนใจ (ถ้ามี)</label>
+                                    <input type="text" id="interestedSpeaker" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="">
+                                </div>
+                                <div>
+                                    <label for="requiredPeriod" class="block text-sm font-medium text-gray-700">ระยะเวลาที่ต้องการฝึกอบรม</label>
+                                    <select id="requiredPeriod" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                        <option>--- เลือก ---</option>
+                                        <option>1 วัน</option>
+                                        <option>2 วัน</option>
+                                        <option>3 วัน</option>
+                                        <option>1 สัปดาห์</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="requiredTime" class="block text-sm font-medium text-gray-700">ช่วงเวลาที่ต้องการฝึกอบรม</label>
+                                    <select id="requiredTime" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                        <option>--- เลือก ---</option>
+                                        <option>ม.ค. - มี.ค. 2568</option>
+                                        <option>เม.ย. - มิ.ย. 2568</option>
+                                        <option>ก.ค. - ก.ย. 2568</option>
+                                        <option>ต.ค. - ธ.ค. 2568</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="flex justify-end space-x-4 pt-4">
+                                <button type="button" class="bg-gray-300 text-gray-800 px-6 py-2 rounded-full font-semibold hover:bg-gray-400">ย้อนกลับ</button>
+                                <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded-full font-semibold hover:bg-indigo-700">ส่งข้อมูล</button>
+                            </div>
+                        </form>
+                    </div>
+                `;
+            }
+            
+            function getPlansContent(type) {
+                let title = '';
+                let intro = '';
+                let plansToShow = [];
+                let createButton = '';
+                const pendingStatuses = [planStatuses.WAIT_DEPT_HEAD, planStatuses.WAIT_DIV_HEAD, planStatuses.WAIT_COMMITTEE];
+                let costColumnHeader = '';
+                let budgetCardsHtml = ''; // Added for the new cards
+
+                if (type === 'approval') {
+                    const budgetForYear = annualBudgets[currentYear] || { training: 0, meeting: 0 };
+
+                    // Calculate used budget for training
+                    const approvedTrainingPlans = samplePlans.filter(p => p.type === 'ฝึกอบรม' && p.status === planStatuses.APPROVED && p.year === currentYear);
+                    const usedTrainingBudget = approvedTrainingPlans.reduce((sum, plan) => {
+                        const planCost = (plan.expenses || []).reduce((cost, exp) => cost + exp.total, 0);
+                        return sum + planCost;
+                    }, 0);
+                    const remainingTrainingBudget = budgetForYear.training - usedTrainingBudget;
+                    const trainingProgress = budgetForYear.training > 0 ? (usedTrainingBudget / budgetForYear.training) * 100 : 0;
+
+                    // Calculate used budget for meetings
+                    const approvedMeetingPlans = samplePlans.filter(p => p.type === 'จัดประชุม' && p.status === planStatuses.APPROVED && p.year === currentYear);
+                    const usedMeetingBudget = approvedMeetingPlans.reduce((sum, plan) => {
+                        const planCost = (plan.expenses || []).reduce((cost, exp) => cost + exp.total, 0);
+                        return sum + planCost;
+                    }, 0);
+                    const remainingMeetingBudget = budgetForYear.meeting - usedMeetingBudget;
+                    const meetingProgress = budgetForYear.meeting > 0 ? (usedMeetingBudget / budgetForYear.meeting) * 100 : 0;
+
+                    budgetCardsHtml = `
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                            <!-- Training Budget Card -->
+                            <div class="bg-blue-50 p-6 rounded-lg shadow-md border border-blue-200">
+                                <div class="flex items-center justify-between mb-2">
+                                    <h4 class="text-lg font-bold text-blue-800">งบประมาณแผนฝึกอบรม ปี ${currentYear}</h4>
+                                    <i class="fas fa-chalkboard-teacher text-2xl text-blue-400"></i>
+                                </div>
+                                <p class="text-sm text-gray-700">งบประมาณทั้งหมด: <span class="font-semibold">${budgetForYear.training.toLocaleString()}</span> บาท</p>
+                                <p class="text-sm text-gray-700">ใช้ไปแล้ว: <span class="font-semibold text-red-600">${usedTrainingBudget.toLocaleString()}</span> บาท</p>
+                                <p class="text-md text-green-700 font-bold mt-1">คงเหลือ: <span class="font-semibold">${remainingTrainingBudget.toLocaleString()}</span> บาท</p>
+                                <div class="w-full bg-gray-200 rounded-full h-4 mt-4 overflow-hidden">
+                                    <div class="bg-blue-600 h-4 rounded-full text-white text-xs flex items-center justify-center" style="width: ${trainingProgress.toFixed(2)}%">
+                                       ${trainingProgress.toFixed(0)}%
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Meeting Budget Card -->
+                            <div class="bg-purple-50 p-6 rounded-lg shadow-md border border-purple-200">
+                                <div class="flex items-center justify-between mb-2">
+                                    <h4 class="text-lg font-bold text-purple-800">งบประมาณจัดประชุมชี้แจง ปี ${currentYear}</h4>
+                                    <i class="fas fa-handshake text-2xl text-purple-400"></i>
+                                </div>
+                                <p class="text-sm text-gray-700">งบประมาณทั้งหมด: <span class="font-semibold">${budgetForYear.meeting.toLocaleString()}</span> บาท</p>
+                                <p class="text-sm text-gray-700">ใช้ไปแล้ว: <span class="font-semibold text-red-600">${usedMeetingBudget.toLocaleString()}</span> บาท</p>
+                                <p class="text-md text-green-700 font-bold mt-1">คงเหลือ: <span class="font-semibold">${remainingMeetingBudget.toLocaleString()}</span> บาท</p>
+                                <div class="w-full bg-gray-200 rounded-full h-4 mt-4 overflow-hidden">
+                                    <div class="bg-purple-600 h-4 rounded-full text-white text-xs flex items-center justify-center" style="width: ${meetingProgress.toFixed(2)}%">
+                                       ${meetingProgress.toFixed(0)}%
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                switch (type) {
+                    case 'my-training-plans':
+                        title = 'แผนฝึกอบรมของฉัน';
+                        intro = 'หน้านี้แสดงรายการแผนการฝึกอบรมทั้งหมดที่คุณได้สร้างขึ้น คุณสามารถสร้างแผนใหม่, แก้ไขแผนที่ยังเป็นฉบับร่าง, หรือติดตามสถานะการอนุมัติแผนของคุณได้ที่นี่';
+                        plansToShow = samplePlans.filter(p => p.creator === userProfiles[currentRole].name && p.type === 'ฝึกอบรม'); 
+                        costColumnHeader = 'สรุปยอดค่าใช้จ่าย';
+                        break;
+                    case 'my-meeting-plans':
+                        title = 'แผนจัดประชุมชี้แจงของฉัน';
+                        intro = 'หน้านี้แสดงรายการแผนการประชุมทั้งหมดที่คุณได้สร้างขึ้น คุณสามารถสร้างแผนใหม่, แก้ไขแผนที่ยังเป็นฉบับร่าง, หรือติดตามสถานะการอนุมัติแผนของคุณได้ที่นี่';
+                        plansToShow = samplePlans.filter(p => p.creator === userProfiles[currentRole].name && p.type === 'จัดประชุม'); 
+                        costColumnHeader = 'สรุปงบประมาณ';
+                        break;
+                    case 'approval':
+                        title = 'รายการรออนุมัติ';
+                        intro = 'ในหน้านี้ คุณจะพบรายการแผนทั้งหมดที่กำลังรอการตรวจสอบและอนุมัติ โปรดพิจารณารายละเอียดของแต่ละแผนและดำเนินการตามความเหมาะสม';
+                        if (currentRole === 'hr') {
+                            plansToShow = samplePlans.filter(p => p.status === planStatuses.WAIT_COMMITTEE);
+                            intro = 'รายการแผนที่รอการอนุมัติจากคณะกรรมการ';
+                        } else if (currentRole === 'approver') {
+                            title = 'รายการอนุมัติ';
+                            intro = 'หน้านี้แสดงแผนที่กำลังรอการอนุมัติและแผนที่คุณได้อนุมัติไปแล้ว';
+                            plansToShow = samplePlans.filter(p => pendingStatuses.includes(p.status) || p.status === planStatuses.APPROVED);
+                        } else if (currentRole === 'user') {
+                            intro = 'หน้านี้แสดงรายการแผนของคุณที่กำลังรอการอนุมัติ';
+                            plansToShow = samplePlans.filter(p => pendingStatuses.includes(p.status) && p.creator === userProfiles[currentRole].name);
+                        } else {
+                            plansToShow = samplePlans.filter(p => pendingStatuses.includes(p.status));
+                        }
+                        costColumnHeader = 'ค่าใช้จ่าย / งบประมาณ';
+                        break;
+                    case 'all-plans':
+                        title = 'แผนทั้งหมดในระบบ';
+                        intro = 'สำหรับแผนกพัฒนาบุคคล หน้านี้คือศูนย์รวมแผนทั้งหมดจากทุกหน่วยงานในองค์กร คุณสามารถค้นหา, กรอง, และดูรายละเอียดของแผนใดๆ ก็ได้ เพื่อให้การจัดการงบประมาณเป็นไปอย่างถูกต้องและโปร่งใส';
+                        plansToShow = samplePlans;
+                        costColumnHeader = 'ค่าใช้จ่าย / งบประมาณ';
+                        break;
+                }
+
+                if (type === 'my-training-plans') {
+                    createButton = `<button id="create-new-plan-btn" data-plan-type="training" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">
+                                        <i class="fas fa-plus mr-2"></i>สร้างแผนฝึกอบรมใหม่
+                                     </button>`;
+                } else if (type === 'my-meeting-plans') {
+                     createButton = `<button id="create-new-plan-btn" data-plan-type="meeting" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">
+                                        <i class="fas fa-plus mr-2"></i>สร้างแผนจัดประชุมใหม่
+                                     </button>`;
+                }
+
+
+                const tableRows = plansToShow.map(plan => {
+                    let totalCost = 0;
+                    if (plan.expenses && plan.expenses.length > 0) {
+                        totalCost = plan.expenses.reduce((sum, expense) => sum + expense.total, 0);
+                    }
+                    const costCell = costColumnHeader ? `<td class="p-4 text-right">${totalCost.toLocaleString('th-TH')} บาท</td>` : '';
+
+                    return `
+                    <tr class="hover:bg-gray-50">
+                        <td class="p-4">${plan.name}</td>
+                        <td class="p-4">${plan.type}</td>
+                        ${type === 'all-plans' || type === 'approval' ? `<td class="p-4">${plan.creator}</td>` : ''}
+                        <td class="p-4">${plan.date}</td>
+                        <td class="p-4">
+                            <span class="px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadgeClass(plan.status)}">${plan.status}</span>
+                        </td>
+                        ${costCell}
+                        <td class="p-4">
+                            <button class="text-indigo-600 hover:text-indigo-800 view-plan-btn" data-plan-id="${plan.id}">ดูรายละเอียด</button>
+                        </td>
+                    </tr>
+                `}).join('');
+
+                return `
+                    <div class="bg-white p-6 rounded-lg shadow">
+                         <div class="intro-paragraph mb-6">
+                            <h3 class="font-semibold text-lg text-indigo-700">${title}</h3>
+                            <p class="text-gray-600 mt-1">${intro}</p>
+                        </div>
+                        ${budgetCardsHtml}
+                        <div class="flex justify-between items-center mb-4">
+                             <h2 class="text-2xl font-bold">${title}</h2>
+                             ${createButton}
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left">
+                                <thead class="bg-gray-100 text-gray-600 uppercase">
+                                    <tr>
+                                        <th class="p-4">ชื่อแผน</th>
+                                        <th class="p-4">ประเภท</th>
+                                        ${type === 'all-plans' || type === 'approval' ? `<th class="p-4">ผู้สร้าง</th>` : ''}
+                                        <th class="p-4">วันที่</th>
+                                        <th class="p-4">สถานะ</th>
+                                        ${costColumnHeader ? `<th class="p-4 text-right">${costColumnHeader}</th>` : ''}
+                                        <th class="p-4"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${tableRows}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+            }
+
+            function setupCreateNewPlanButton() {
+                const createBtn = document.getElementById('create-new-plan-btn');
+                if (createBtn) {
+                    createBtn.addEventListener('click', () => {
+                        const planType = createBtn.dataset.planType;
+                        if (planType === 'training') {
+                            renderPage('create-training-plan');
+                        } else if (planType === 'meeting') {
+                            renderPage('create-meeting-plan');
+                        }
+                    });
+                }
+            }
+            
+            function getCreateTrainingPlanContent() {
+                return `
+                    <div class="bg-white p-6 rounded-lg shadow space-y-6">
+                        <div class="intro-paragraph">
+                            <h2 class="text-2xl font-bold text-indigo-700 mb-2">สร้างแผนฝึกอบรม</h2>
+                            <p class="text-gray-600">กรุณากรอกรายละเอียดของแผนฝึกอบรมให้ครบถ้วนเพื่อส่งให้ผู้ที่เกี่ยวข้องพิจารณา</p>
+                        </div>
+                        
+                        <!-- Training Details Section -->
+                        <div class="p-6 bg-gray-50 rounded-lg border border-gray-200">
+                            <h3 class="text-lg font-bold text-indigo-600 mb-4">รายละเอียดแผนฝึกอบรม</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <label for="department" class="block text-sm font-medium text-gray-700">หน่วยงานที่จัดอบรม <span class="text-red-500">*</span></label>
+                                    <input type="text" id="department" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="">
+                                </div>
+                                <div>
+                                    <label for="courseName" class="block text-sm font-medium text-gray-700">โครงการ / หัวข้อฝึกอบรม <span class="text-red-500">*</span></label>
+                                    <input type="text" id="courseName" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="">
+                                </div>
+                            </div>
+                            <div class="mb-4">
+                                <label for="trainingArea" class="block text-sm font-medium text-gray-700">ที่มาของหลักสูตร <span class="text-red-500">*</span></label>
+                                <input type="text" id="trainingArea" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="">
+                            </div>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 items-end">
+                                <div class="col-span-1">
+                                    <label for="vendorOrSource" class="block text-sm font-medium text-gray-700">ชื่อ / รายละเอียดสถานที่จัดอบรม <span class="text-red-500">*</span></label>
+                                    <input type="text" id="vendorOrSource" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="">
+                                </div>
+                                <div class="col-span-1">
+                                    <label class="block text-sm font-medium text-gray-700">สถานที่จัดอบรม <span class="text-red-500">*</span></label>
+                                    <div class="flex items-center space-x-4 mt-2">
+                                        <div class="flex items-center radio-container">
+                                            <input type="radio" id="inHouse" name="locationType" value="ภายใน" class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" checked>
+                                            <label for="inHouse" class="ml-2 text-sm font-medium text-gray-700">ภายใน</label>
+                                        </div>
+                                        <div class="flex items-center radio-container">
+                                            <input type="radio" id="external" name="locationType" value="ภายนอก" class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                                            <label for="external" class="ml-2 text-sm font-medium text-gray-700">ภายนอก</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-4">
+                                <label for="additionalDetails" class="block text-sm font-medium text-gray-700">รายละเอียดเพิ่มเติม</label>
+                                <textarea id="additionalDetails" rows="3" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder=""></textarea>
+                            </div>
+                        </div>
+
+                        <!-- Participants Section -->
+                        <div class="p-6 bg-gray-50 rounded-lg border border-gray-200">
+                            <h3 class="text-lg font-bold text-indigo-600 mb-4">ผู้เข้าร่วม</h3>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div>
+                                    <label for="claimableCount" class="block text-sm font-medium text-gray-700">จำนวนผู้ที่เบิกค่าใช้จ่ายได้ (คน)</label>
+                                    <input type="number" id="claimableCount" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="0" min="0">
+                                </div>
+                                <div>
+                                    <label for="nonClaimableCount" class="block text-sm font-medium text-gray-700">จำนวนผู้ที่ไม่สามารถเบิกค่าใช้จ่ายได้ (คน)</label>
+                                    <input type="number" id="nonClaimableCount" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="0" min="0">
+                                </div>
+                            </div>
+                            
+                            <!-- Participant Input Row -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div class="col-span-1">
+                                    <label for="participantGroup" class="block text-sm font-medium text-gray-700">กลุ่มเป้าหมาย <span class="text-red-500">*</span></label>
+                                    <input type="text" id="participantGroup" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="เช่น แผนกบัญชี">
+                                </div>
+                                <div class="col-span-1">
+                                    <label for="participantCount" class="block text-sm font-medium text-gray-700">จำนวน (คน) <span class="text-red-500">*</span></label>
+                                    <div class="flex items-center space-x-2 mt-1">
+                                        <input type="number" id="participantCount" class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="0" min="0">
+                                        <button type="button" id="add-participant-btn" class="bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700 transition-colors flex-shrink-0">
+                                            <i class="fas fa-plus"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- New Speaker Input Row -->
+                            <h3 class="text-lg font-bold text-indigo-600 mt-8 mb-4">วิทยากร</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                <div class="col-span-1">
+                                    <label for="speakerType" class="block text-sm font-medium text-gray-700">ประเภทวิทยากร <span class="text-red-500">*</span></label>
+                                    <input type="text" id="speakerType" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="เช่น วิทยากรภายใน, วิทยากรภายนอก">
+                                </div>
+                                <div class="col-span-1">
+                                    <label for="speakerCount" class="block text-sm font-medium text-gray-700">จำนวน (คน) <span class="text-red-500">*</span></label>
+                                    <div class="flex items-center space-x-2 mt-1">
+                                        <input type="number" id="speakerCount" class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="0" min="0">
+                                        <button type="button" id="add-speaker-btn" class="bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700 transition-colors flex-shrink-0">
+                                            <i class="fas fa-plus"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Participant & Speaker Table -->
+                            <div class="overflow-x-auto mb-4">
+                                <table class="w-full text-sm text-left border-collapse">
+                                    <thead class="bg-gray-100 text-gray-600 uppercase">
+                                        <tr>
+                                            <th class="p-4 border-b border-gray-200">ลำดับ</th>
+                                            <th class="p-4 border-b border-gray-200">ประเภท</th>
+                                            <th class="p-4 border-b border-gray-200">จำนวน (คน)</th>
+                                            <th class="p-4 text-center border-b border-gray-200">จัดการ</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="participants-table-body">
+                                        <!-- Rows will be added here -->
+                                    </tbody>
+                                        </table>
+                                    </div>
+                                    
+                                    <p class="text-right text-base font-semibold mt-4 text-gray-600">รวมจำนวนวิทยากรทั้งหมด: <span id="total-speakers" class="text-indigo-600">0</span> คน</p>
+                                    <p class="text-right text-base font-semibold mt-2 text-gray-600">รวมจำนวนผู้เข้าร่วมทั้งหมด: <span id="total-participants" class="text-indigo-600">0</span> คน</p>
+                                </div>
+        
+                                <div class="p-6 bg-gray-50 rounded-lg border border-gray-200">
+                                    <h3 class="text-lg font-bold text-indigo-600 mb-4">ค่าใช้จ่าย</h3>
+
+                                    <!-- Expense - Food & Drinks -->
+                                    <h4 class="text-md font-semibold text-gray-700 mb-2">รายการค่าอาหารว่างและเครื่องดื่ม</h4>
+                                    <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4 items-end">
+                                        <div class="col-span-2">
+                                            <label for="foodDescription" class="block text-sm font-medium text-gray-700">รายละเอียด</label>
+                                            <input type="text" id="foodDescription" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="เช่น ค่าอาหารว่างเช้า, ค่าอาหารกลางวัน">
+                                        </div>
+                                        <div>
+                                            <label for="foodUnit" class="block text-sm font-medium text-gray-700">หน่วย</label>
+                                            <input type="text" id="foodUnit" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="เช่น ชุด, คน, กล่อง">
+                                        </div>
+                                        <div>
+                                            <label for="foodQuantity" class="block text-sm font-medium text-gray-700">จำนวน</label>
+                                            <input type="number" id="foodQuantity" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="0" min="0">
+                                        </div>
+                                        <div>
+                                            <label for="foodPrice" class="block text-sm font-medium text-gray-700">ราคา/หน่วย</label>
+                                            <div class="flex items-center space-x-2 mt-1">
+                                                <input type="number" id="foodPrice" class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="0" min="0">
+                                                <button type="button" id="add-food-btn" class="bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700 transition-colors flex-shrink-0">
+                                                    <i class="fas fa-plus"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Expense - Accommodation & Per Diem -->
+                                    <h4 class="text-md font-semibold text-gray-700 mt-6 mb-2">รายการค่าใช้จ่ายเบี้ยเลี้ยง ที่พัก พาหนะเดินทาง</h4>
+                                    <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4 items-end">
+                                        <div class="col-span-1">
+                                            <label for="travelDescription" class="block text-sm font-medium text-gray-700">รายละเอียด</label>
+                                            <input type="text" id="travelDescription" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="เช่น ค่าที่พัก, ค่าเบี้ยเลี้ยง">
+                                        </div>
+                                        <div>
+                                            <label for="travelDays" class="block text-sm font-medium text-gray-700">จำนวนวัน</label>
+                                            <input type="number" id="travelDays" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="0" min="0">
+                                        </div>
+                                        <div>
+                                            <label for="travelPax" class="block text-sm font-medium text-gray-700">จำนวนคน</label>
+                                            <input type="number" id="travelPax" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="0" min="0">
+                                        </div>
+                                        <div>
+                                            <label for="travelPricePerPerson" class="block text-sm font-medium text-gray-700">ราคา/คน</label>
+                                            <div class="flex items-center space-x-2 mt-1">
+                                                <input type="number" id="travelPricePerPerson" class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="0" min="0">
+                                                <button type="button" id="add-travel-btn" class="bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700 transition-colors flex-shrink-0">
+                                                    <i class="fas fa-plus"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Expense - Operations -->
+                                    <h4 class="text-md font-semibold text-gray-700 mt-6 mb-2">รายการค่าใช้จ่ายดำเนินการ</h4>
+                                    <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4 items-end">
+                                        <div class="col-span-2">
+                                            <label for="operationalDescription" class="block text-sm font-medium text-gray-700">รายละเอียด</label>
+                                            <input type="text" id="operationalDescription" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="เช่น ค่าเอกสารประกอบ, ค่าเช่าสถานที่">
+                                        </div>
+                                        <div>
+                                            <label for="operationalUnit" class="block text-sm font-medium text-gray-700">หน่วย</label>
+                                            <input type="text" id="operationalUnit" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="เช่น ชุด, วัน, ครั้ง">
+                                        </div>
+                                        <div>
+                                            <label for="operationalQuantity" class="block text-sm font-medium text-gray-700">จำนวน</label>
+                                            <input type="number" id="operationalQuantity" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="0" min="0">
+                                        </div>
+                                        <div>
+                                            <label for="operationalPrice" class="block text-sm font-medium text-gray-700">ราคา/หน่วย</label>
+                                            <div class="flex items-center space-x-2 mt-1">
+                                                <input type="number" id="operationalPrice" class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="0" min="0">
+                                                <button type="button" id="add-operational-btn" class="bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700 transition-colors flex-shrink-0">
+                                                    <i class="fas fa-plus"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Expense Table -->
+                                    <div class="overflow-x-auto mb-4">
+                                        <table class="w-full text-sm text-left border-collapse">
+                                            <thead class="bg-gray-100 text-gray-600 uppercase">
+                                                <tr>
+                                                    <th class="p-4 border-b border-gray-200">ลำดับ</th>
+                                                    <th class="p-4 border-b border-gray-200">ประเภท</th>
+                                                    <th class="p-4 border-b border-gray-200">รายละเอียด</th>
+                                                    <th class="p-4 border-b border-gray-200">หน่วย</th>
+                                                    <th class="p-4 border-b border-gray-200">จำนวน</th>
+                                                    <th class="p-4 border-b border-gray-200">ราคา/หน่วย</th>
+                                                    <th class="p-4 border-b border-gray-200">สรุปจำนวนเงิน (บาท)</th>
+                                                    <th class="p-4 text-center border-b border-gray-200">จัดการ</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="expenses-table-body">
+                                                <!-- Rows will be added here -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+        
+                                    <p class="text-right text-base font-semibold mt-4 text-gray-600">รวมค่าใช้จ่ายอาหารและเครื่องดื่ม: <span id="total-food-expenses" class="text-indigo-600">0</span> บาท</p>
+                                    <p class="text-right text-base font-semibold mt-2 text-gray-600">รวมค่าใช้จ่ายเบี้ยเลี้ยง: <span id="total-travel-expenses" class="text-indigo-600">0</span> บาท</p>
+                                    <p class="text-right text-base font-semibold mt-2 text-gray-600">รวมค่าใช้จ่ายดำเนินการ: <span id="total-operational-expenses" class="text-indigo-600">0</span> บาท</p>
+                                    <p class="text-right text-base font-bold mt-4 text-gray-800">ยอดรวมค่าใช้จ่ายทั้งหมด: <span id="total-expenses" class="text-indigo-700">0</span> บาท</p>
+                                </div>
+        
+                                <div class="flex justify-end space-x-4 pt-4">
+                                    <button type="button" class="bg-gray-300 text-gray-800 px-6 py-2 rounded-full font-semibold hover:bg-gray-400">ย้อนกลับ</button>
+                                    <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded-full font-semibold hover:bg-indigo-700">บันทึกร่าง</button>
+                                    <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded-full font-semibold hover:bg-indigo-700">ส่งข้อมูล</button>
+                                </div>
+                            </div>
+                        `;
+                    }
+        
+                    function getCreateMeetingPlanContent() {
+                        const participantLabel = currentRole === 'user' ? 'ผู้เกี่ยวข้อง' : 'กลุ่มเป้าหมาย';
+                        return `
+                            <div class="bg-white p-6 rounded-lg shadow space-y-6">
+                                <div class="intro-paragraph">
+                                    <h2 class="text-2xl font-bold text-indigo-700 mb-2">สร้างแผนจัดประชุมชี้แจง</h2>
+                                    <p class="text-gray-600">กรุณากรอกรายละเอียดของแผนจัดประชุมให้ครบถ้วนเพื่อส่งให้ผู้ที่เกี่ยวข้องพิจารณา</p>
+                                </div>
+                                
+                                <!-- Meeting Details Section -->
+                                <div class="p-6 bg-gray-50 rounded-lg border border-gray-200">
+                                    <h3 class="text-lg font-bold text-indigo-600 mb-4">รายละเอียด</h3>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div>
+                                            <label for="meetingName" class="block text-sm font-medium text-gray-700">โครงการ / หัวข้อประชุม <span class="text-red-500">*</span></label>
+                                            <input type="text" id="meetingName" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                        </div>
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-700">รูปแบบการจัดประชุม <span class="text-red-500">*</span></label>
+                                            <div class="flex space-x-4 mt-2 radio-container">
+                                                <input type="radio" id="online" name="meetingFormat" value="Online" checked>
+                                                <label for="online" class="rounded-full px-4 py-2 text-sm font-semibold">Online</label>
+                                                <input type="radio" id="onsite" name="meetingFormat" value="Onsite">
+                                                <label for="onsite" class="rounded-full px-4 py-2 text-sm font-semibold">Onsite</label>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label for="startDate" class="block text-sm font-medium text-gray-700">วันที่เริ่มดำเนินการ <span class="text-red-500">*</span></label>
+                                            <input type="date" id="startDate" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                        </div>
+                                        <div>
+                                            <label for="endDate" class="block text-sm font-medium text-gray-700">วันที่สิ้นสุดดำเนินการ <span class="text-red-500">*</span></label>
+                                            <input type="date" id="endDate" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Stakeholders Section -->
+                                <div class="p-6 bg-gray-50 rounded-lg border border-gray-200">
+                                    <h3 class="text-lg font-bold text-indigo-600 mb-4">${participantLabel}</h3>
+                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
+                                        <div>
+                                            <label for="sessionCount" class="block text-sm font-medium text-gray-700">จำนวนรุ่น</label>
+                                            <input type="number" id="sessionCount" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="1" min="1">
+                                        </div>
+                                        <div>
+                                            <label for="meetingDays" class="block text-sm font-medium text-gray-700">จำนวนวันที่จัดประชุม</label>
+                                            <input type="number" id="meetingDays" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="1" min="1">
+                                        </div>
+                                    </div>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                                        <div class="col-span-1">
+                                            <label for="participantGroup" class="block text-sm font-medium text-gray-700">${participantLabel} <span class="text-red-500">*</span></label>
+                                            <input type="text" id="participantGroup" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="เช่น แผนกบัญชี">
+                                        </div>
+                                        <div class="col-span-1">
+                                            <label for="participantCount" class="block text-sm font-medium text-gray-700">จำนวน (คน) <span class="text-red-500">*</span></label>
+                                            <div class="flex items-center space-x-2 mt-1">
+                                                <input type="number" id="participantCount" class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="0" min="0">
+                                                <button type="button" id="add-participant-btn" class="bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700 transition-colors flex-shrink-0">
+                                                    <i class="fas fa-plus"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="overflow-x-auto mb-4">
+                                        <table class="w-full text-sm text-left border-collapse">
+                                            <thead class="bg-gray-100 text-gray-600 uppercase">
+                                                <tr>
+                                                    <th class="p-4 border-b border-gray-200">ลำดับ</th>
+                                                    <th class="p-4 border-b border-gray-200">${participantLabel}</th>
+                                                    <th class="p-4 border-b border-gray-200">จำนวน (คน)</th>
+                                                    <th class="p-4 text-center border-b border-gray-200">จัดการ</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="participants-table-body">
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <p class="text-right text-base font-semibold mt-2 text-gray-600">รวมจำนวนผู้เข้าร่วมทั้งหมด: <span id="total-participants" class="text-indigo-600">0</span> คน</p>
+                                </div>
+
+                                <!-- Budget Section -->
+                                <div class="p-6 bg-gray-50 rounded-lg border border-gray-200">
+                                    <h3 class="text-lg font-bold text-indigo-600 mb-4">งบประมาณ</h3>
+                                    <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4 items-end">
+                                        <div class="md:col-span-2">
+                                            <label for="budgetItemDescription" class="block text-sm font-medium text-gray-700">รายละเอียด</label>
+                                            <input type="text" id="budgetItemDescription" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="เช่น ค่าอาหาร, ค่าเช่าห้อง">
+                                        </div>
+                                        <div>
+                                            <label for="budgetItemUnit" class="block text-sm font-medium text-gray-700">หน่วย</label>
+                                            <input type="text" id="budgetItemUnit" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="เช่น คน, วัน">
+                                        </div>
+                                        <div>
+                                            <label for="budgetItemQuantity" class="block text-sm font-medium text-gray-700">จำนวนหน่วย</label>
+                                            <input type="number" id="budgetItemQuantity" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="0" min="0">
+                                        </div>
+                                        <div>
+                                            <label for="budgetItemPrice" class="block text-sm font-medium text-gray-700">ราคา/หน่วย</label>
+                                            <div class="flex items-center space-x-2 mt-1">
+                                                <input type="number" id="budgetItemPrice" class="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" value="0" min="0">
+                                                <button type="button" id="add-budget-item-btn" class="bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700 transition-colors flex-shrink-0">
+                                                    <i class="fas fa-plus"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="overflow-x-auto mb-4">
+                                        <table class="w-full text-sm text-left border-collapse">
+                                            <thead class="bg-gray-100 text-gray-600 uppercase">
+                                                <tr>
+                                                    <th class="p-4 border-b border-gray-200">ลำดับ</th>
+                                                    <th class="p-4 border-b border-gray-200">รายละเอียด</th>
+                                                    <th class="p-4 border-b border-gray-200">หน่วย</th>
+                                                    <th class="p-4 border-b border-gray-200">จำนวนหน่วย</th>
+                                                    <th class="p-4 border-b border-gray-200">ราคา/หน่วย</th>
+                                                    <th class="p-4 border-b border-gray-200">จำนวนเงิน (บาท)</th>
+                                                    <th class="p-4 text-center border-b border-gray-200">จัดการ</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="budget-table-body">
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <p class="text-right text-base font-bold mt-4 text-gray-800">ยอดรวมงบประมาณทั้งหมด: <span id="total-budget" class="text-indigo-700">0</span> บาท</p>
+                                </div>
+
+                                <div class="flex justify-end space-x-4 pt-4">
+                                    <button type="button" class="bg-gray-300 text-gray-800 px-6 py-2 rounded-full font-semibold hover:bg-gray-400">ย้อนกลับ</button>
+                                    <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded-full font-semibold hover:bg-indigo-700">บันทึกร่าง</button>
+                                    <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded-full font-semibold hover:bg-indigo-700">ส่งข้อมูล</button>
+                                </div>
+                            </div>
+                        `;
+                    }
+        
+                    function setupCreatePlanForm() {
+                        const addParticipantBtn = document.getElementById('add-participant-btn');
+                        const participantGroupInput = document.getElementById('participantGroup');
+                        const participantCountInput = document.getElementById('participantCount');
+                        const addSpeakerBtn = document.getElementById('add-speaker-btn');
+                        const speakerTypeInput = document.getElementById('speakerType');
+                        const speakerCountInput = document.getElementById('speakerCount');
+                        const participantsTableBody = document.getElementById('participants-table-body');
+                        const totalParticipantsSpan = document.getElementById('total-participants');
+                        const totalSpeakersSpan = document.getElementById('total-speakers');
+        
+                        const addFoodBtn = document.getElementById('add-food-btn');
+                        const foodDescriptionInput = document.getElementById('foodDescription');
+                        const foodUnitInput = document.getElementById('foodUnit');
+                        const foodQuantityInput = document.getElementById('foodQuantity');
+                        const foodPriceInput = document.getElementById('foodPrice');
+
+                        const addTravelBtn = document.getElementById('add-travel-btn');
+                        const travelDescriptionInput = document.getElementById('travelDescription');
+                        const travelDaysInput = document.getElementById('travelDays');
+                        const travelPaxInput = document.getElementById('travelPax');
+                        const travelPricePerPersonInput = document.getElementById('travelPricePerPerson');
+
+                        const addOperationalBtn = document.getElementById('add-operational-btn');
+                        const operationalDescriptionInput = document.getElementById('operationalDescription');
+                        const operationalUnitInput = document.getElementById('operationalUnit');
+                        const operationalQuantityInput = document.getElementById('operationalQuantity');
+                        const operationalPriceInput = document.getElementById('operationalPrice');
+                        
+                        const expensesTableBody = document.getElementById('expenses-table-body');
+                        const totalFoodExpensesSpan = document.getElementById('total-food-expenses');
+                        const totalTravelExpensesSpan = document.getElementById('total-travel-expenses');
+                        const totalOperationalExpensesSpan = document.getElementById('total-operational-expenses');
+                        const totalExpensesSpan = document.getElementById('total-expenses');
+        
+                        let participantRows = [];
+                        let expenseRows = [];
+        
+                        function updateParticipantTotal() {
+                            const totalParticipants = participantRows.filter(r => r.type === 'กลุ่มเป้าหมาย').reduce((sum, row) => sum + row.count, 0);
+                            const totalSpeakers = participantRows.filter(r => r.type === 'วิทยากร').reduce((sum, row) => sum + row.count, 0);
+                            totalParticipantsSpan.textContent = totalParticipants;
+                            totalSpeakersSpan.textContent = totalSpeakers;
+                        }
+        
+                        function renderParticipantTable() {
+                            participantsTableBody.innerHTML = '';
+                            participantRows.forEach((row, index) => {
+                                const newRow = document.createElement('tr');
+                                newRow.classList.add('hover:bg-gray-50');
+                                newRow.innerHTML = `
+                                    <td class="p-4 border-t border-gray-200">${index + 1}</td>
+                                    <td class="p-4 border-t border-gray-200">${row.group}</td>
+                                    <td class="p-4 border-t border-gray-200 text-right">${row.count}</td>
+                                    <td class="p-4 border-t border-gray-200 text-center">
+                                        <button type="button" class="text-red-600 hover:text-red-800 delete-participant-row-btn" data-index="${index}">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </td>
+                                `;
+                                participantsTableBody.appendChild(newRow);
+                            });
+                            updateParticipantTotal();
+                        }
+        
+                        function updateExpenseTotal() {
+                            const totalFood = expenseRows.filter(r => r.expenseType === 'food').reduce((sum, row) => sum + row.total, 0);
+                            const totalTravel = expenseRows.filter(r => r.expenseType === 'travel').reduce((sum, row) => sum + row.total, 0);
+                            const totalOperational = expenseRows.filter(r => r.expenseType === 'operational').reduce((sum, row) => sum + row.total, 0);
+                            const total = totalFood + totalTravel + totalOperational;
+                            
+                            totalFoodExpensesSpan.textContent = totalFood.toLocaleString();
+                            totalTravelExpensesSpan.textContent = totalTravel.toLocaleString();
+                            totalOperationalExpensesSpan.textContent = totalOperational.toLocaleString();
+                            totalExpensesSpan.textContent = total.toLocaleString();
+                        }
+        
+                        function renderExpenseTable() {
+                            expensesTableBody.innerHTML = '';
+                            expenseRows.forEach((row, index) => {
+                                const newRow = document.createElement('tr');
+                                newRow.classList.add('hover:bg-gray-50');
+                                newRow.innerHTML = `
+                                    <td class="p-4 border-t border-gray-200">${index + 1}</td>
+                                    <td class="p-4 border-t border-gray-200">${row.type}</td>
+                                    <td class="p-4 border-t border-gray-200">${row.description}</td>
+                                    <td class="p-4 border-t border-gray-200">${row.unit}</td>
+                                    <td class="p-4 border-t border-gray-200 text-right">${row.quantity}</td>
+                                    <td class="p-4 border-t border-gray-200 text-right">${row.price.toLocaleString()}</td>
+                                    <td class="p-4 border-t border-gray-200 text-right">${row.total.toLocaleString()}</td>
+                                    <td class="p-4 border-t border-gray-200 text-center">
+                                        <button type="button" class="text-red-600 hover:text-red-800 delete-expense-row-btn" data-index="${index}">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </td>
+                                `;
+                                expensesTableBody.appendChild(newRow);
+                            });
+                            updateExpenseTotal();
+                        }
+        
+                        addParticipantBtn.addEventListener('click', () => {
+                            const group = participantGroupInput.value.trim();
+                            const count = parseInt(participantCountInput.value);
+        
+                            if (group && !isNaN(count) && count > 0) {
+                                participantRows.push({ group: group, count: count, type: 'กลุ่มเป้าหมาย' });
+                                participantGroupInput.value = '';
+                                participantCountInput.value = '0';
+                                renderParticipantTable();
+                            } else {
+                                console.error('กรุณา กรอกชื่อกลุ่มและจำนวนผู้เข้าร่วมที่ถูกต้อง');
+                            }
+                        });
+        
+                        addSpeakerBtn.addEventListener('click', () => {
+                            const type = speakerTypeInput.value.trim();
+                            const count = parseInt(speakerCountInput.value);
+        
+                            if (type && !isNaN(count) && count > 0) {
+                                participantRows.push({ group: type, count: count, type: 'วิทยากร' });
+                                speakerTypeInput.value = '';
+                                speakerCountInput.value = '0';
+                                renderParticipantTable();
+                            } else {
+                                console.error('กรุณากรอกประเภทวิทยากรและจำนวนที่ถูกต้อง');
+                            }
+                        });
+        
+                        addFoodBtn.addEventListener('click', () => {
+                            const description = foodDescriptionInput.value.trim();
+                            const unit = foodUnitInput.value.trim() || 'หน่วย';
+                            const quantity = parseInt(foodQuantityInput.value);
+                            const price = parseFloat(foodPriceInput.value);
+        
+                            if (description && !isNaN(quantity) && quantity > 0 && !isNaN(price) && price > 0) {
+                                const total = quantity * price;
+                                expenseRows.push({ expenseType: 'food', type: 'ค่าอาหารว่างและเครื่องดื่ม', description, unit, quantity, price, total });
+                                foodDescriptionInput.value = '';
+                                foodUnitInput.value = '';
+                                foodQuantityInput.value = '0';
+                                foodPriceInput.value = '0';
+                                renderExpenseTable();
+                            } else {
+                                console.error('กรุณากรอกข้อมูลค่าใช้จ่ายให้ครบถ้วนและถูกต้อง');
+                            }
+                        });
+
+                         addTravelBtn.addEventListener('click', () => {
+                            const description = travelDescriptionInput.value.trim();
+                            const days = parseInt(travelDaysInput.value);
+                            const pax = parseInt(travelPaxInput.value);
+                            const pricePerPerson = parseFloat(travelPricePerPersonInput.value);
+
+                            if (description && !isNaN(days) && days > 0 && !isNaN(pax) && pax > 0 && !isNaN(pricePerPerson) && pricePerPerson > 0) {
+                                const total = days * pax * pricePerPerson;
+                                expenseRows.push({ expenseType: 'travel', type: 'ค่าเบี้ยเลี้ยง/ที่พัก/พาหนะ', description, unit: `${days} วัน x ${pax} คน`, quantity: 1, price: total, total });
+                                travelDescriptionInput.value = '';
+                                travelDaysInput.value = '0';
+                                travelPaxInput.value = '0';
+                                travelPricePerPersonInput.value = '0';
+                                renderExpenseTable();
+                            } else {
+                                console.error('กรุณากรอกข้อมูลค่าใช้จ่ายเบี้ยเลี้ยงให้ครบถ้วนและถูกต้อง');
+                            }
+                        });
+        
+                        addOperationalBtn.addEventListener('click', () => {
+                            const description = operationalDescriptionInput.value.trim();
+                            const unit = operationalUnitInput.value.trim() || 'หน่วย';
+                            const quantity = parseInt(operationalQuantityInput.value);
+                            const price = parseFloat(operationalPriceInput.value);
+        
+                            if (description && !isNaN(quantity) && quantity > 0 && !isNaN(price) && price > 0) {
+                                const total = quantity * price;
+                                expenseRows.push({ expenseType: 'operational', type: 'ค่าใช้จ่ายดำเนินการ', description, unit, quantity, price, total });
+                                operationalDescriptionInput.value = '';
+                                operationalUnitInput.value = '';
+                                operationalQuantityInput.value = '0';
+                                operationalPriceInput.value = '0';
+                                renderExpenseTable();
+                            } else {
+                                console.error('กรุณากรอกข้อมูลค่าใช้จ่ายให้ครบถ้วนและถูกต้อง');
+                            }
+                        });
+
+                        participantsTableBody.addEventListener('click', (e) => {
+                            if (e.target.closest('.delete-participant-row-btn')) {
+                                const index = e.target.closest('.delete-participant-row-btn').dataset.index;
+                                participantRows.splice(index, 1);
+                                renderParticipantTable();
+                            }
+                        });
+        
+                        expensesTableBody.addEventListener('click', (e) => {
+                            if (e.target.closest('.delete-expense-row-btn')) {
+                                const index = e.target.closest('.delete-expense-row-btn').dataset.index;
+                                expenseRows.splice(index, 1);
+                                renderExpenseTable();
+                            }
+                        });
+        
+                         renderParticipantTable();
+                         renderExpenseTable();
+                    }
+
+                    function setupCreateMeetingPlanForm() {
+                        const addParticipantBtn = document.getElementById('add-participant-btn');
+                        const participantGroupInput = document.getElementById('participantGroup');
+                        const participantCountInput = document.getElementById('participantCount');
+                        const participantsTableBody = document.getElementById('participants-table-body');
+                        const totalParticipantsSpan = document.getElementById('total-participants');
+
+                        const addBudgetItemBtn = document.getElementById('add-budget-item-btn');
+                        const budgetDescriptionInput = document.getElementById('budgetItemDescription');
+                        const budgetUnitInput = document.getElementById('budgetItemUnit');
+                        const budgetQuantityInput = document.getElementById('budgetItemQuantity');
+                        const budgetPriceInput = document.getElementById('budgetItemPrice');
+                        const budgetTableBody = document.getElementById('budget-table-body');
+                        const totalBudgetSpan = document.getElementById('total-budget');
+
+                        let participantRows = [];
+                        let budgetRows = [];
+
+                        function updateTotalParticipants() {
+                            const total = participantRows.reduce((sum, row) => sum + row.count, 0);
+                            totalParticipantsSpan.textContent = total;
+                        }
+
+                        function renderParticipantTable() {
+                            participantsTableBody.innerHTML = '';
+                            participantRows.forEach((row, index) => {
+                                const newRow = document.createElement('tr');
+                                newRow.classList.add('hover:bg-gray-50');
+                                newRow.innerHTML = `
+                                    <td class="p-4 border-t border-gray-200">${index + 1}</td>
+                                    <td class="p-4 border-t border-gray-200">${row.group}</td>
+                                    <td class="p-4 border-t border-gray-200 text-right">${row.count}</td>
+                                    <td class="p-4 border-t border-gray-200 text-center">
+                                        <button type="button" class="text-red-600 hover:text-red-800 delete-participant-row-btn" data-index="${index}">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </td>
+                                `;
+                                participantsTableBody.appendChild(newRow);
+                            });
+                            updateTotalParticipants();
+                        }
+
+                        function updateTotalBudget() {
+                            const total = budgetRows.reduce((sum, row) => sum + row.amount, 0);
+                            totalBudgetSpan.textContent = total.toLocaleString();
+                        }
+
+                        function renderBudgetTable() {
+                            budgetTableBody.innerHTML = '';
+                            budgetRows.forEach((row, index) => {
+                                const newRow = document.createElement('tr');
+                                newRow.classList.add('hover:bg-gray-50');
+                                newRow.innerHTML = `
+                                    <td class="p-4 border-t border-gray-200">${index + 1}</td>
+                                    <td class="p-4 border-t border-gray-200">${row.description}</td>
+                                    <td class="p-4 border-t border-gray-200">${row.unit}</td>
+                                    <td class="p-4 border-t border-gray-200 text-right">${row.quantity.toLocaleString()}</td>
+                                    <td class="p-4 border-t border-gray-200 text-right">${row.price.toLocaleString()}</td>
+                                    <td class="p-4 border-t border-gray-200 text-right font-semibold">${row.amount.toLocaleString()}</td>
+                                    <td class="p-4 border-t border-gray-200 text-center">
+                                        <button type="button" class="text-red-600 hover:text-red-800 delete-budget-row-btn" data-index="${index}">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </td>
+                                `;
+                                budgetTableBody.appendChild(newRow);
+                            });
+                            updateTotalBudget();
+                        }
+
+                        addParticipantBtn.addEventListener('click', () => {
+                            const group = participantGroupInput.value.trim();
+                            const count = parseInt(participantCountInput.value);
+                            if (group && !isNaN(count) && count > 0) {
+                                participantRows.push({ group, count });
+                                participantGroupInput.value = '';
+                                participantCountInput.value = '0';
+                                renderParticipantTable();
+                            }
+                        });
+
+                        addBudgetItemBtn.addEventListener('click', () => {
+                            const description = budgetDescriptionInput.value.trim();
+                            const unit = budgetUnitInput.value.trim();
+                            const quantity = parseInt(budgetQuantityInput.value);
+                            const price = parseFloat(budgetPriceInput.value);
+
+                            if (description && unit && !isNaN(quantity) && quantity > 0 && !isNaN(price) && price >= 0) {
+                                const amount = quantity * price;
+                                budgetRows.push({ description, unit, quantity, price, amount });
+                                budgetDescriptionInput.value = '';
+                                budgetUnitInput.value = '';
+                                budgetQuantityInput.value = '0';
+                                budgetPriceInput.value = '0';
+                                renderBudgetTable();
+                            }
+                        });
+
+                        participantsTableBody.addEventListener('click', (e) => {
+                            const deleteBtn = e.target.closest('.delete-participant-row-btn');
+                            if (deleteBtn) {
+                                const index = deleteBtn.dataset.index;
+                                participantRows.splice(index, 1);
+                                renderParticipantTable();
+                            }
+                        });
+
+                        budgetTableBody.addEventListener('click', (e) => {
+                            const deleteBtn = e.target.closest('.delete-budget-row-btn');
+                            if (deleteBtn) {
+                                const index = deleteBtn.dataset.index;
+                                budgetRows.splice(index, 1);
+                                renderBudgetTable();
+                            }
+                        });
+
+                        renderParticipantTable();
+                        renderBudgetTable();
+                    }
+        
+                    function getAnnualBudgetContent() {
+                        const yearOptions = availableYears.map(year => `<option value="${year}" ${year === currentYear ? 'selected' : ''}>${year}</option>`).join('');
+                        const departments = ['ฝสบ.', 'ฝวบ.', 'ฝปบ.']; // Assuming the third one is ฝปบ. based on existing data
+                        const cards = departments.map(dept => `
+                            <div class="p-6 bg-gray-50 rounded-lg border border-gray-200">
+                                <h3 class="text-lg font-bold text-indigo-600 mb-4">หน่วยงาน: ${dept}</h3>
+                                <div class="space-y-4">
+                                    <div>
+                                        <label for="budget-training-${dept.toLowerCase()}" class="block text-sm font-medium text-gray-700">งบประมาณแผนฝึกอบรม (บาท)</label>
+                                        <input type="number" id="budget-training-${dept.toLowerCase()}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="0" min="0">
+                                    </div>
+                                    <div>
+                                        <label for="budget-meeting-${dept.toLowerCase()}" class="block text-sm font-medium text-gray-700">งบประมาณจัดประชุมชี้แจง (บาท)</label>
+                                        <input type="number" id="budget-meeting-${dept.toLowerCase()}" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="0" min="0">
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('');
+
+                        return `
+                            <div class="bg-white p-6 rounded-lg shadow">
+                                <div class="flex justify-between items-center mb-6">
+                                    <div class="intro-paragraph">
+                                        <h3 class="font-semibold text-lg text-indigo-700">งบประมาณประจำปี</h3>
+                                        <p class="text-gray-600 mt-1">กำหนดงบประมาณประจำปีสำหรับแผนฝึกอบรมและแผนจัดประชุมของแต่ละหน่วยงาน</p>
+                                    </div>
+                                    <div class="flex items-center space-x-2">
+                                        <label for="budget-year-filter" class="text-sm font-medium">เลือกปี:</label>
+                                        <select id="budget-year-filter" class="p-2 rounded-md border bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                            ${yearOptions}
+                                        </select>
+                                    </div>
+                                </div>
+                                
+                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    ${cards}
+                                </div>
+                                
+                                <div class="flex justify-end mt-6">
+                                    <button type="button" class="bg-indigo-600 text-white px-6 py-2 rounded-full font-semibold hover:bg-indigo-700">บันทึกข้อมูล</button>
+                                </div>
+                            </div>
+                        `;
+                    }
+
+                    function setupAnnualBudgetPage() {
+                        const yearFilter = document.getElementById('budget-year-filter');
+                        if (yearFilter) {
+                            yearFilter.addEventListener('change', (e) => {
+                                currentYear = e.target.value;
+                                // Re-render the page to reflect the change and update the selected option
+                                renderPage('annual-budget'); 
+                            });
+                        }
+                    }
+
+                     function getSpeakerFeeContent() {
+                        return `
+                            <div class="bg-white p-6 rounded-lg shadow">
+                                <div class="intro-paragraph mb-6">
+                                    <h3 class="font-semibold text-lg text-indigo-700">ข้อมูลค่าวิทยากร</h3>
+                                    <p class="text-gray-600 mt-1">ใช้หน้านี้เพื่อบันทึกและติดตามการเบิกจ่ายค่าตอบแทนวิทยากรสำหรับการฝึกอบรมต่างๆ คุณสามารถเพิ่มรายการเบิกจ่ายใหม่และดูประวัติการจ่ายเงินทั้งหมดได้ที่นี่ เพื่อให้การจัดการงบประมาณเป็นไปอย่างถูกต้องและโปร่งใส</p>
+                                </div>
+                                 <div class="flex justify-between items-center mb-4">
+                                    <h2 class="text-2xl font-bold">ประวัติการเบิกจ่ายค่าวิทยากร</h2>
+                                    <button class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">
+                                        <i class="fas fa-plus mr-2"></i>เพิ่มรายการใหม่
+                                     </button>
+                                 </div>
+                                <div class="overflow-x-auto">
+                                   <table class="w-full text-sm text-left">
+                                        <thead class="bg-gray-100 text-gray-600 uppercase">
+                                            <tr>
+                                                <th class="p-4">ชื่อหลักสูตร</th>
+                                                <th class="p-4">ชื่อวิทยากร</th>
+                                                <th class="p-4">จำนวนเงิน (บาท)</th>
+                                                <th class="p-4">วันที่จ่าย</th>
+                                                <th class="p-4">สถานะ</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr class="hover:bg-gray-50">
+                                                <td class="p-4">Effective Communication</td>
+                                                <td class="p-4">อ.เก่งกาจ สามารถ</td>
+                                                <td class="p-4">15,000</td>
+                                                <td class="p-4">2025-08-15</td>
+                                                <td class="p-4"><span class="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">จ่ายแล้ว</span></td>
+                                            </tr>
+                                             <tr class="hover:bg-gray-50">
+                                                <td class="p-4">Advanced Excel</td>
+                                                <td class="p-4">คุณเชี่ยวชาญ พิเศษ</td>
+                                                <td class="p-4">12,000</td>
+                                                <td class="p-4">2025-07-20</td>
+                                                <td class="p-4"><span class="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">จ่ายแล้ว</span></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        `;
+                    }
+        
+                    function updateUserInfo() {
+                        const profile = userProfiles[currentRole];
+                        userName.textContent = profile.name;
+                        userRoleText.textContent = profile.roleText;
+                    }
+        
+                    roleSwitcher.addEventListener('change', (e) => {
+                        currentRole = e.target.value;
+                        updateUserInfo();
+                        renderMenu();
+                        renderPage('dashboard');
+                    });
+                    
+                    // Modal Logic
+                    const planModal = document.getElementById('plan-modal');
+                    const trainingNeedModal = document.getElementById('training-need-modal');
+                    const areaModal = document.getElementById('training-needs-by-area-modal');
+                    
+                    mainContent.addEventListener('click', function(e) {
+                        // For Plan Details
+                        if(e.target.closest('.view-plan-btn')) {
+                            const planId = e.target.closest('.view-plan-btn').dataset.planId;
+                            const plan = samplePlans.find(p => p.id == planId);
+                            
+                            // Basic Info
+                            document.getElementById('modal-plan-name').textContent = plan.name;
+                            document.getElementById('modal-plan-type').textContent = plan.type;
+                            document.getElementById('modal-plan-creator').textContent = plan.creator;
+                            document.getElementById('modal-plan-date').textContent = plan.date;
+                            document.getElementById('modal-plan-status').innerHTML = `<span class="px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadgeClass(plan.status)}">${plan.status}</span>`;
+                            document.getElementById('modal-plan-details').textContent = plan.details || '-';
+
+                            // Participants
+                            const participantsSection = document.getElementById('modal-participants-section');
+                            const participantsContent = document.getElementById('modal-plan-participants');
+                            if (plan.participants && plan.participants.length > 0) {
+                                let participantsHtml = `
+                                    <table class="w-full text-sm text-left">
+                                        <thead class="bg-gray-100">
+                                            <tr>
+                                                <th class="p-2">ประเภท</th>
+                                                <th class="p-2">กลุ่ม</th>
+                                                <th class="p-2 text-right">จำนวน (คน)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>`;
+                                plan.participants.forEach(p => {
+                                    participantsHtml += `
+                                        <tr class="border-b">
+                                            <td class="p-2">${p.type}</td>
+                                            <td class="p-2">${p.group}</td>
+                                            <td class="p-2 text-right">${p.count}</td>
+                                        </tr>`;
+                                });
+                                const totalParticipants = plan.participants.filter(p => p.type === 'กลุ่มเป้าหมาย').reduce((sum, p) => sum + p.count, 0);
+                                const totalSpeakers = plan.participants.filter(p => p.type === 'วิทยากร').reduce((sum, p) => sum + p.count, 0);
+                                participantsHtml += `
+                                        </tbody>
+                                        <tfoot class="font-semibold bg-gray-50">
+                                            <tr><td class="p-2 text-right" colspan="2">รวมผู้เข้าร่วม:</td><td class="p-2 text-right">${totalParticipants}</td></tr>
+                                            ${totalSpeakers > 0 ? `<tr><td class="p-2 text-right" colspan="2">รวมวิทยากร:</td><td class="p-2 text-right">${totalSpeakers}</td></tr>` : ''}
+                                        </tfoot>
+                                    </table>`;
+                                participantsContent.innerHTML = participantsHtml;
+                                participantsSection.classList.remove('hidden');
+                            } else {
+                                participantsSection.classList.add('hidden');
+                            }
+
+                            // Expenses
+                            const expensesSection = document.getElementById('modal-expenses-section');
+                            const expensesContent = document.getElementById('modal-plan-expenses');
+                            if (plan.expenses && plan.expenses.length > 0) {
+                                let expensesHtml = `
+                                    <table class="w-full text-sm text-left">
+                                        <thead class="bg-gray-100">
+                                            <tr>
+                                                <th class="p-2">ประเภท</th>
+                                                <th class="p-2">รายละเอียด</th>
+                                                <th class="p-2 text-right">จำนวนเงิน (บาท)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>`;
+                                let totalExpense = 0;
+                                plan.expenses.forEach(ex => {
+                                    totalExpense += ex.total;
+                                    expensesHtml += `
+                                        <tr class="border-b">
+                                            <td class="p-2">${ex.type}</td>
+                                            <td class="p-2">${ex.description}</td>
+                                            <td class="p-2 text-right">${ex.total.toLocaleString()}</td>
+                                        </tr>`;
+                                });
+                                expensesHtml += `
+                                        </tbody>
+                                        <tfoot class="font-bold bg-gray-50">
+                                            <tr>
+                                                <td class="p-2 text-right" colspan="2">รวมทั้งหมด:</td>
+                                                <td class="p-2 text-right">${totalExpense.toLocaleString()}</td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>`;
+                                expensesContent.innerHTML = expensesHtml;
+                                expensesSection.classList.remove('hidden');
+                            } else {
+                                expensesSection.classList.add('hidden');
+                            }
+                            
+                            const modalActions = document.getElementById('modal-actions');
+                            let actions = [];
+                            
+                            const isCreator = plan.creator === userProfiles[currentRole].name;
+                            const isApproverRole = currentRole === 'approver' || currentRole === 'hr';
+                            const isPending = [planStatuses.WAIT_DEPT_HEAD, planStatuses.WAIT_DIV_HEAD, planStatuses.WAIT_COMMITTEE].includes(plan.status);
+                            const isEditable = plan.status !== planStatuses.APPROVED && plan.status !== planStatuses.REJECTED;
+
+                            // Add Edit button for the creator if the plan is not in a final state
+                            if (isCreator && (plan.status === planStatuses.DRAFT || plan.status === planStatuses.NEED_REVISION)) {
+                                actions.push(`<button class="bg-yellow-500 text-white px-4 py-2 rounded-lg hover:bg-yellow-600"><i class="fas fa-edit mr-2"></i>แก้ไขข้อมูล</button>`);
+                            }
+
+                            // Add Approve/Reject buttons for approvers on pending plans
+                            if (isApproverRole && isPending) {
+                                actions.push(`<button class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600">ไม่อนุมัติ</button>`);
+                                actions.push(`<button class="bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600">ส่งกลับแก้ไข</button>`);
+                                actions.push(`<button class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600">อนุมัติ</button>`);
+                            }
+                            
+                            // Add Gen PDF button for approved plans
+                            if (plan.status === planStatuses.APPROVED) {
+                                actions.push(`<button class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600"><i class="fas fa-file-pdf mr-2"></i>Gen PDF</button>`);
+                            }
+
+                            // Always add the Close button at the end
+                            actions.push(`<button class="bg-gray-300 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-400 close-modal-action-btn">ปิด</button>`);
+        
+                            modalActions.innerHTML = actions.join('');
+        
+                            planModal.classList.remove('hidden');
+                            planModal.classList.add('flex');
+                        }
+        
+                        // For Training Need Details
+                        if(e.target.closest('.view-training-need-btn')) {
+                            const needId = e.target.closest('.view-training-need-btn').dataset.needId;
+                            const need = sampleTrainingNeeds.find(n => n.id == needId);
+        
+                            if (need) {
+                                document.getElementById('tn-creator').textContent = need.creator;
+                                document.getElementById('tn-course-name').textContent = need.name;
+                                document.getElementById('tn-training-area').textContent = need.trainingArea;
+                                document.getElementById('tn-problem').textContent = need.problem;
+                                document.getElementById('tn-expected-results').textContent = need.expectedResults;
+                                document.getElementById('tn-special-needs').textContent = need.specialNeeds || '-';
+        
+                                trainingNeedModal.classList.remove('hidden');
+                                trainingNeedModal.classList.add('flex');
+                            }
+                        }
+                        
+                        // For Training Needs by Area
+                        if(e.target.closest('.view-by-area-btn')) {
+                            const areaName = e.target.closest('.view-by-area-btn').dataset.areaName;
+                            const needs = sampleTrainingNeeds.filter(n => n.trainingArea === areaName);
+        
+                            document.getElementById('area-modal-title').textContent = `รายละเอียดหลักสูตร: ${areaName}`;
+                            const tableBody = document.getElementById('area-modal-table-body');
+                            
+                            tableBody.innerHTML = needs.map(need => `
+                                <tr class="hover:bg-gray-50">
+                                    <td class="p-4">${need.name}</td>
+                                    <td class="p-4">${need.creator}</td>
+                                    <td class="p-4">${need.date}</td>
+                                    <td class="p-4 text-center">
+                                        <button class="text-indigo-600 hover:text-indigo-800 view-training-need-btn" data-need-id="${need.id}">ดูรายละเอียด</button>
+                                    </td>
+                                </tr>
+                            `).join('');
+        
+                            areaModal.classList.remove('hidden');
+                            areaModal.classList.add('flex');
+                        }
+                    });
+        
+                    planModal.addEventListener('click', function(e) {
+                        if (e.target.id === 'plan-modal' || e.target.closest('#close-modal-btn') || e.target.closest('.close-modal-action-btn')) {
+                            planModal.classList.add('hidden');
+                            planModal.classList.remove('flex');
+                        }
+                    });
+        
+                    trainingNeedModal.addEventListener('click', function(e) {
+                        if (e.target.id === 'training-need-modal' || e.target.closest('#close-training-need-modal-btn')) {
+                            trainingNeedModal.classList.add('hidden');
+                            trainingNeedModal.classList.remove('flex');
+                        }
+                    });
+                    
+                    areaModal.addEventListener('click', function(e) {
+                         if (e.target.id === 'training-needs-by-area-modal' || e.target.closest('#close-area-modal-btn')) {
+                            areaModal.classList.add('hidden');
+                            areaModal.classList.remove('flex');
+                        }
+                    });
+        
+                    // Sidebar toggle
+                    openSidebarBtn.addEventListener('click', () => {
+                        sidebar.classList.remove('-translate-x-full');
+                    });
+                    closeSidebarBtn.addEventListener('click', () => {
+                        sidebar.classList.add('-translate-x-full');
+                    });
+        
+                    // Initial render
+                    updateUserInfo();
+                    renderMenu();
+                    renderPage('dashboard');
+                });
+            </script>
+        </body>
+        </html>
+
+
+
+
+
+
+
+
+
+
+
